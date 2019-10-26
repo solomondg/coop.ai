@@ -5,6 +5,8 @@ import numpy as np
 import numpy.linalg
 import networkx as nx
 
+import carla
+
 import zmq
 
 from apis.Messages import Request
@@ -66,8 +68,16 @@ class Agent(MeshNode):
         self.dispatchTable['get_graph_recursive'] = self.getGraph_Recursive
         self.dispatchTable['num_connections'] = lambda: len(self.directly_connected)
 
+        self.dispatchTable['connect_carla'] = self.connect_carla
+        self.dispatchTable['spawn_vehicle'] = self.spawn_vehicle
+        self.dispatchTable['drive_vehicle'] = self.drive_vehicle
+
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
+
+        self.carla_client = None
+        self.carla_world = None
+        self.carla_vehicle = None
 
     def isAgentNode(self) -> bool:
         return True
@@ -182,6 +192,19 @@ class Agent(MeshNode):
             if random() < probability:
                 l2[i], l2[i+1] = l2[i+1], l2[i]
         return l2
+
+    def connect_carla(self, ip: str = 'localhost', port: int = 2000):
+        self.carla_client = carla.Client(ip, port)
+        self.carla_world = self.carla_client.get_world()
+
+    def spawn_vehicle(self, x, y, z, yaw, template_filter='*.tesla.*'):
+        blueprint = self.carla_world.get_blueprint_library().filter(template_filter)[0]
+        spawnpoint = carla.Tranform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
+        self.carla_vehicle = self.carla_world.spawn_actor(blueprint, spawnpoint)
+
+    def drive_vehicle(self, x, y, z, yaw):
+        self.carla_vehicle.set_velocity(carla.Vector3D(x=x, y=y, z=z))
+        self.carla_vehicle.set_angular_velocity(carla.Vector3D(z=yaw))
 
 
 def test_findSSIDs():

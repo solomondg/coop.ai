@@ -80,6 +80,17 @@ class DriveController:
 
         return velocity_profile
 
+    def lookahead_point(self, waypoint_profile, current_position, current_vel):
+        """
+        Generates the next point to target, given waypoints and the current vehicle state
+        :param waypoint_profile:
+        :param current_position:
+        :param current_vel:
+        :return:
+        """
+
+        return None
+
     def predict(self, velocity_profile, waypoint_profile, initial_heading=0, predict_dt=0.01):
         """
         Predict the car's behavior for the coming time
