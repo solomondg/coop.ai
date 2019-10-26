@@ -14,6 +14,12 @@ class MessageType(Enum):
     RESPONSE = 1
 
 
+class RPCErrorType(Enum):
+    FUNCTION_NOT_FOUND = 0
+    INCOMPATIBLE_ARGS = 1
+    INTERNAL_ERROR = 2
+
+
 class Message(ABC):
     type: MessageType
 
