@@ -35,11 +35,13 @@ class Message(ABC):
 class Request(Message):
     function: str
     args: List
+    longRunning: bool
 
-    def __init__(self, function: str, args=None):
+    def __init__(self, function: str, args=None, longRunning=False):
         self.type = MessageType.REQUEST
         self.function = function
         self.args = args if args is not None else []
+        self.longRunning = longRunning
 
 
 class Response(Message):
