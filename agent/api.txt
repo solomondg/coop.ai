@@ -1,0 +1,8 @@
+All messages are pickled
+Message message
+Response response
+
+
+get_ssid -> returns SSID
+args: ()
+ret: "ssid"
