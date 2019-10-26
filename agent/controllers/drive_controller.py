@@ -1,8 +1,7 @@
 import numpy as np
 
-
 class DriveController:
-    def __init__(self, wheelbase_length, max_steering_angle=30*np.pi/180):
+    def __init__(self, wheelbase_length, max_steering_angle=30 * np.pi / 180):
         self.wheelbase_length = wheelbase_length
         self.max_steering_angle = max_steering_angle
 
@@ -32,6 +31,8 @@ class DriveController:
         :return: Steering angle, in rads
         """
 
+        current_heading *= -1
+
         rot_matrix = np.array([
             [np.cos(current_heading), -np.sin(current_heading)],
             [np.sin(current_heading), np.cos(current_heading)]
@@ -47,7 +48,7 @@ class DriveController:
             steering_angle = self.max_steering_angle * rel_y / abs(rel_y)
         else:
             turning_radius = (rel_x ** 2 + rel_y ** 2) / (2 * rel_y)  # Turning radius in m
-            steering_angle = np.arctan(self.wheelbase_length / turning_radius)
+            steering_angle = np.arctan2(self.wheelbase_length, turning_radius)
 
             if steering_angle > np.pi / 2:
                 steering_angle -= (np.pi)
@@ -109,7 +110,7 @@ class DriveController:
         current_x, current_y = 0, 0
         current_heading = initial_heading
         prediciton_points = []
-        for t_raw in np.linspace(0, last_time, int(last_waypoint_time/predict_dt), endpoint=False):
+        for t_raw in np.linspace(0, last_time, int(last_waypoint_time / predict_dt), endpoint=False):
             t = round(t_raw, 5)
             # look for the next projected point
             next_point_index = int(np.floor(t / report_dt))

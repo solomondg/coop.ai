@@ -111,6 +111,8 @@ class MeshNode(ABC):
 
     @staticmethod
     def call(port: int, req: Request) -> Response:
+        if req.function in ['get_graph_recursive', 'intra_graph_call', 'route_intra_graph_call']:
+            req.longRunning = True
         s = zmq.Context().socket(zmq.REQ)
         if not req.longRunning:
             s.setsockopt(zmq.RCVTIMEO, 10)
