@@ -8,7 +8,7 @@ from typing import Dict, Callable
 
 from apis.Messages import Request, Response, Message, RequestStatus, RPCErrorType
 
-defaultPortRange = (8000, 9000)
+defaultPortRange = (8000, 8100)
 
 
 class MeshNode(ABC):
@@ -24,13 +24,18 @@ class MeshNode(ABC):
     socket_opened = False
     thread_started = False
 
-    def __init__(self, ssid=binascii.b2a_hex(os.urandom(15)).decode(), name=None):
-        self.ssid = ssid
-        self.name = ssid if name is None else name
+    def __init__(self, ssid: str = None, name: str = None,
+                 port: int = None, port_range: tuple = None):
+        self.ssid = binascii.b2a_hex(os.urandom(15)).decode() if ssid is None else ssid
+        self.name = self.ssid if name is None else name
         self.dispatchTable = {}
         self.dispatchTable['ssid'] = self.getSSID
         self.dispatchTable['list_functions'] = self.getFunctions
         self.dispatchTable['is_coopai'] = self.isAgentNode
+        port_range = defaultPortRange if port_range is None else port_range
+
+        self.bind(port=port, port_range=port_range)
+        self.start()
 
         super().__init__()
 
@@ -40,13 +45,11 @@ class MeshNode(ABC):
         if port is None:  # time to auto find port
             found = False
             for searchPoint in range(port_range[0], port_range[1]):
-                print(f"Trying {searchPoint}...")
                 try:
                     self.socket.bind('tcp://*:{}'.format(searchPoint))
                 except zmq.ZMQError:
-                    print("Socket in use")
+                    pass
                 else:
-                    print("Socket available!")
                     found = True
                     break
             if not found: raise Exception("Open port not found!")
@@ -59,8 +62,9 @@ class MeshNode(ABC):
                 raise Exception("Open port not found!")
 
         self.portNumber = port if port is not None else searchPoint
-
         self.socket_opened = True
+
+        print(f"Agent {self.name} connected to socket {self.portNumber}")
 
     def start(self):
         self.running = True
@@ -108,9 +112,21 @@ class MeshNode(ABC):
     @staticmethod
     def call(port: int, req: Request) -> Response:
         s = zmq.Context().socket(zmq.REQ)
-        s.setsockopt(zmq.RCVTIMEO, 100)
-        s.setsockopt(zmq.SNDTIMEO, 100)
+        if not req.longRunning:
+            s.setsockopt(zmq.RCVTIMEO, 10)
+            s.setsockopt(zmq.SNDTIMEO, 10)
+            s.setsockopt(zmq.LINGER, 0)
+        else:
+            s.setsockopt(zmq.RCVTIMEO, -1)
+            s.setsockopt(zmq.SNDTIMEO, -1)
+            s.setsockopt(zmq.LINGER, 1)
         s.connect("tcp://localhost:{}".format(port))
         s.send(req.serialize())
-        resp = Response.load(s.recv())
+        try:
+            recv = s.recv()
+        except zmq.error.Again as a:
+            raise a
+        finally:
+            s.close()
+        resp = Response.load(recv)
         return resp
