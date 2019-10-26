@@ -1,13 +1,16 @@
 from dataclasses import dataclass
 from typing import List
-from random import random,shuffle
+from random import random, shuffle
 import numpy as np
 import numpy.linalg
 import networkx as nx
+import networkx.algorithms
+from enum import Enum
 
 import zmq
 
 from apis.Messages import Request
+from controllers.drive_controller import DriveController
 from services.MeshNode import MeshNode, defaultPortRange
 
 
@@ -45,6 +48,16 @@ DIST_THRESHHOLD = 10000
 MAX_GRAPH_DEPTH = 3
 
 
+class AgentDrivingMode(Enum):
+    ASSHOLE = -1
+    MERGING_REQ = 0
+    MERGING_ACT = 1
+    DRIVING_HIGHWAY = 2
+    DRIVING_CITY = 3
+    TURNING = 4
+    IDLE = 5
+
+
 class Agent(MeshNode):
     """
     Main agent microservice
@@ -54,6 +67,9 @@ class Agent(MeshNode):
     found_agents: List[AgentRepresentation] = []
     gpscoords: np.ndarray
     graph: nx.Graph
+    drivingMode: AgentDrivingMode
+
+    driveController: DriveController
 
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
@@ -62,12 +78,23 @@ class Agent(MeshNode):
         self.gpscoords = np.asarray([0, 0])
         self.dispatchTable['get_coords'] = self._getCoords
         self.dispatchTable['set_coords'] = self._setCoords
-        self.dispatchTable['get_connected'] = self._getCoords
+        # self.dispatchTable['get_connected'] = self._getCoords
         self.dispatchTable['get_graph_recursive'] = self.getGraph_Recursive
         self.dispatchTable['num_connections'] = lambda: len(self.directly_connected)
+        self.dispatchTable['set_driving_mode'] = self._setDrivingMode
+        self.dispatchTable['get_driving_mode'] = lambda: self.drivingMode
+        self.dispatchTable['route_intra_graph_call'] = self.routeGraphRequest
+        self.dispatchTable['intra_graph_call'] = self.execGraphRequest
+        self.dispatchTable['ssid_lookup'] = self.getRepForSSID
+
+        self.dispatchTable['negotiatePriority']
+        self.dispatchTable['tick']
 
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
+
+        self.drivingMode = AgentDrivingMode.IDLE
+        self.driveController = DriveController(2.5)
 
     def isAgentNode(self) -> bool:
         return True
@@ -162,7 +189,9 @@ class Agent(MeshNode):
                         agents.append(agent)
             agents2 = [a for a in self._semiShuffle(self.found_agents) if a in agents]
             agents = agents2
-            for agent in agents[0: min(MAX_CONNECTED_AGENTS - len(list(self.graph.neighbors(AgentRepresentation.fromAgent(self)))), len(agents))]:
+            for agent in agents[0: min(
+                    MAX_CONNECTED_AGENTS - len(list(self.graph.neighbors(AgentRepresentation.fromAgent(self)))),
+                    len(agents))]:
                 print(f"Forming additional connection between {self.ssid} and {agent.ssid}")
                 self.graph.add_edge(agent, AgentRepresentation.fromAgent(self))
                 self.directly_connected.append(agent)
@@ -180,8 +209,39 @@ class Agent(MeshNode):
         l2 = l.copy()
         for i in range(len(l2) - 1):
             if random() < probability:
-                l2[i], l2[i+1] = l2[i+1], l2[i]
+                l2[i], l2[i + 1] = l2[i + 1], l2[i]
         return l2
+
+    def _setDrivingMode(self, mode: AgentDrivingMode):
+        self.drivingMode = mode
+
+    def _routeTo(self, node: AgentRepresentation):
+        return nx.algorithms.shortest_path(self.graph, AgentRepresentation.fromAgent(self), node)
+
+    def routeGraphRequest(self, req: Request, path: List[AgentRepresentation]):
+        if len(path) == 1:
+            return self.dispatch(req).response
+        else:
+            path.pop(0)
+            return MeshNode.call(path[0].port, req=Request("route_intra_graph_call", [req, path])).response
+
+    def execGraphRequest(self, req: Request, endpoint: AgentRepresentation):
+        path = self._routeTo(endpoint)
+        req = Request("route_intra_graph_call", [req, path])
+        return self.dispatch(req).response
+
+    def getRepForSSID(self, ssid: str):
+        return [i for i in self.graph.nodes if i.ssid == ssid][0]
+
+    def negotiatePriority(self, other: AgentRepresentation):
+        ourMode = self.drivingMode
+        theirMode = self.dispatch(Request('intra_graph_call', args=[Request('get_driving_mode'), other])).response
+        if ourMode > theirMode:
+            self._determineYieldAction(ourMode, theirMode)
+
+    def _determineYieldAction(self, ourMode: AgentDrivingMode, theirMode: AgentDrivingMode):
+        pass
+
 
 
 def test_findSSIDs():
@@ -196,7 +256,7 @@ def test_findSSIDs():
 
 
 def test_findNodes():
-    N = 5
+    N = 4
     objs = []
     coordDict = {}
     for i in range(N):
@@ -212,7 +272,7 @@ def test_findNodes():
     print(f"Traversed total: {[i.ssid for i in traversed]}")
 
     import matplotlib.pyplot as plt
-    #nx.draw_networkx(graph, pos=coordDict,
+    # nx.draw_networkx(graph, pos=coordDict,
     #                 labels={key: key.ssid for key in [AgentRepresentation.fromAgent(a) for a in objs]})
     nx.draw_networkx(graph, pos=coordDict,
                      labels={key: key.ssid for key in [AgentRepresentation.fromAgent(a) for a in objs]})
@@ -223,6 +283,30 @@ def test_findNodes():
     plt.show()
 
 
+def test_pathing():
+    N = 3
+    objs = []
+    coordDict = {}
+    for i in range(N):
+        a = Agent(ssid=f'AGENT-{str(i)}')
+        pos = np.asarray([random(), random()])
+        coordDict[AgentRepresentation.fromAgent(a)] = pos
+        MeshNode.call(a.portNumber, Request("set_coords", args=[pos]))
+        objs.append(a)
+
+    (graph, traversed) = MeshNode.call(objs[0].portNumber,
+                                       Request('get_graph_recursive', args=[[]], longRunning=True)).response
+
+    # route = objs[0]._routeTo(objs[0].found_agents[3])
+    # print(objs[0].found_agents[3], route)
+    targetAgent = MeshNode.call(objs[0].portNumber, Request('ssid_lookup', args=['AGENT-1'])).response
+    targetAgentCoords = MeshNode.call(objs[0].portNumber,
+                                      Request('intra_graph_call', args=[Request('get_coords'), targetAgent])).response
+    print(targetAgent, targetAgentCoords)
+    print(objs[0].negotiatePriority(targetAgent))
+
+
 if __name__ == "__main__":
     # test_findSSIDs()
     test_findNodes()
+    #test_pathing()
