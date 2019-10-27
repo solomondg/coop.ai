@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import List
 from random import random, shuffle
@@ -434,7 +435,7 @@ class Agent(MeshNode):
             velocity_profile=self.driveController.get_velocity_profile(
                 start_vel=self.waypointFollowSpeed,
                 end_vel=self.waypointFollowSpeed, end_time=5),
-            waypoints=self.waypointList, pose0=self.vehiclePose, predict_dt=0.01, predict_end=t_end
+            waypoints=deepcopy(self.waypointList), pose0=deepcopy(self.vehiclePose), predict_dt=0.01, predict_end=t_end
         )
         return log
 
