@@ -411,6 +411,7 @@ class Agent(MeshNode):
     mergeStartTime: float=0.0
     mergeDwell: float = 5.0
     def _setMerge(self, frontCar: AgentRepresentation, backCar: AgentRepresentation):
+        self.followTarget = frontCar
         self.drivingBehavior = AgentDrivingBehavior.MERGING
         MeshNode.call(backCar.port, Request("set_follow_target", AgentRepresentation.fromAgent(self))).response
         self.mergeStartTime = time()
