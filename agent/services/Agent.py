@@ -187,14 +187,14 @@ class Agent(MeshNode):
                 # print(f"no agent found")
                 pass
             else:
-                agentCoords: np.ndarray = MeshNode.call(port, Request('get_coords')).response
+                agentCoords: np.ndarray = MeshNode.call(port, Request('get_pose')).response
                 dist = self._getDistance(agentCoords)
                 # print(f"agent found with coordinates {agentCoords} and distance {dist}.")
                 if dist <= DIST_THRESHHOLD:
                     known_agents.append(AgentRepresentation(port=port, ssid=ssid))
 
         return sorted(known_agents, key= \
-            lambda a: np.linalg.norm((MeshNode.call(a.port, Request('get_coords')).response.translation - self.vehiclePose.translation).position.asNDArray()))
+            lambda a: np.linalg.norm((MeshNode.call(a.port, Request('get_pose')).response.translation - self.vehiclePose.translation).position.asNDArray()))
 
         # To build graph:
 
@@ -361,7 +361,7 @@ class Agent(MeshNode):
     def _distanceToFollowTarget(self) -> Translation2d:
         our_pose = self.vehiclePose
         their_pose: Pose2d = self.dispatch(Request('intra_graph_call',
-                                                   args=[Request('get_coords'), self.followTarget])).response
+                                                   args=[Request('get_pose'), self.followTarget])).response
         pose_difference = their_pose.translation - our_pose.translation
         diff_along_axis: float = pose_difference.position.dot(self.followAxis)
         return diff_along_axis
@@ -389,7 +389,7 @@ def test_findSSIDs():
     objs = []
     for i in range(N):
         a = Agent(ssid=f'AGENT-{str(i)}')
-        MeshNode.call(a.portNumber, Request("set_coords", args=[np.asarray([random(), random()])]))
+        MeshNode.call(a.portNumber, Request("set_pose", args=[np.asarray([random(), random()])]))
         objs.append(a)
 
     print(objs[0].findAgents())
@@ -403,7 +403,7 @@ def test_findNodes():
         a = Agent(ssid=f'AGENT-{str(i)}')
         pos = np.asarray([random(), random()])
         coordDict[AgentRepresentation.fromAgent(a)] = pos
-        MeshNode.call(a.portNumber, Request("set_coords", args=[pos]))
+        MeshNode.call(a.portNumber, Request("set_pose", args=[pos]))
         objs.append(a)
 
     (graph, traversed) = MeshNode.call(objs[0].portNumber,
@@ -431,7 +431,7 @@ def test_pathing():
         a = Agent(ssid=f'AGENT-{str(i)}')
         pos = np.asarray([random(), random()])
         coordDict[AgentRepresentation.fromAgent(a)] = pos
-        MeshNode.call(a.portNumber, Request("set_coords", args=[pos]))
+        MeshNode.call(a.portNumber, Request("set_pose", args=[pos]))
         objs.append(a)
 
     (graph, traversed) = MeshNode.call(objs[0].portNumber,
@@ -441,12 +441,13 @@ def test_pathing():
     # print(objs[0].found_agents[3], route)
     targetAgent = MeshNode.call(objs[0].portNumber, Request('ssid_lookup', args=['AGENT-1'])).response
     targetAgentCoords = MeshNode.call(objs[0].portNumber,
-                                      Request('intra_graph_call', args=[Request('get_coords'), targetAgent])).response
+                                      Request('intra_graph_call', args=[Request('get_pose'), targetAgent])).response
     print(targetAgent, targetAgentCoords)
     print(objs[0].negotiatePriority(targetAgent))
 
 
 if __name__ == "__main__":
     # test_findSSIDs()
-    test_findNodes()
+    #test_findNodes()
+    pass
     # test_pathing()
