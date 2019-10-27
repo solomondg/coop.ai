@@ -87,7 +87,7 @@ class Agent(MeshNode):
     connected_agents: List[AgentRepresentation] = []
     directly_connected: List[AgentRepresentation] = []
     found_agents: List[AgentRepresentation] = []
-    gpscoords: np.ndarray
+    gpscoords: Pose2d
     graph: nx.Graph
 
     drivingMode: AgentDrivingMode = AgentDrivingMode.IDLE
@@ -181,10 +181,10 @@ class Agent(MeshNode):
         return True
 
     def _getCoords(self) -> np.ndarray:
-        return self.pose
+        return self.vehiclePose
 
     def _setCoords(self, newCoords: Pose2d):
-        self.gpscoords = Pose2d
+        self.vehiclePose = newCoords
 
     def _getDistance(self, otherCoords: np.ndarray) -> float:
         return np.linalg.norm((self.vehiclePose.translation - otherCoords.translation).position.asNDArray())
