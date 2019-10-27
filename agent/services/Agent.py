@@ -163,6 +163,10 @@ class Agent(MeshNode):
 
         self.dispatchTable['get_fwd_velocity'] = lambda: self._getCarForwardVelocity()
 
+        self.dispatchTable['get_simulation'] = self._getSimulation
+
+        self.collisionDetection = False
+
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
 
@@ -417,15 +421,15 @@ class Agent(MeshNode):
     def _setDrivingBehavior(self, behavior: AgentDrivingBehavior):
         self.drivingBehavior = behavior
 
-    mergeStartTime: float=0.0
+    mergeStartTime: float = 0.0
     mergeDwell: float = 5.0
+
     def _setMerge(self, frontCar: AgentRepresentation, backCar: AgentRepresentation):
         self.followTarget = frontCar
         self.drivingBehavior = AgentDrivingBehavior.MERGING
         MeshNode.call(backCar.port, Request("set_follow_target", args=[AgentRepresentation.fromAgent(self)])).response
-        #self.mergeStartTime = time()
+        # self.mergeStartTime = time()
         self.mergeStartTime = 0.0
-
 
     def _setVelocityRef(self, vref: float):
         self.velocityReference = vref
@@ -508,7 +512,46 @@ class Agent(MeshNode):
         return log
 
     def _solveForProfileToAvoidCollision(self, futureLitigator: AgentRepresentation):
-        pass
+        solved = False
+        minDist: float = 5  # meter
+        otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
+        while not solved:
+            log = self._getSimulation(5.0)
+            closest = 1000
+            for i in range(len(log)):
+                p_us: Translation2d = log[i][1]
+                p_them: Translation2d = otherProfile[i][1]
+                if (p_us - p_them).l2 < closest:
+                    closest = (p_us - p_them).l2
+            if closest < minDist:
+                s0, s1 = self.velocityReference[0], self.velocityReference[100]
+                if s1 == 0.0:
+                    raise Exception("Collision unavoidable!")
+                print(f"Collision detected, reducing end speed {s1}->{max(s1 - 0.2, 0)}")
+                self.velocityReference = self.driveController.get_velocity_profile(s0, max(s1 - 0.2, 0), end_time=3)
+            else:
+                solved = True
+
+    def _willCollide(self, futureLitigator: AgentRepresentation):
+        minDist: float = 5
+        otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
+        log = self._getSimulation(5.0)
+        closest = 1000
+        for i in range(len(log)):
+            p_us: Translation2d = log[i][1]
+            p_them: Translation2d = otherProfile[i][1]
+            if (p_us - p_them).l2 < closest:
+                closest = (p_us - p_them).l2
+        if (closest < minDist):
+            print(f"Collision detected between {self.ssid} and {futureLitigator.ssid}! Min spacing of {closest}")
+        return closest < minDist
+
+    def _getAnyCollisions(self):
+        allNodes = [i for i in self.graph.nodes if i is not AgentRepresentation.fromAgent(self)]
+        for agent in allNodes:
+            if self._willCollide(agent):
+                return agent
+        return None
 
 
 def test_findSSIDs():
