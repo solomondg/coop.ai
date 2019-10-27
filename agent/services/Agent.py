@@ -110,7 +110,7 @@ class Agent(MeshNode):
 
     purePursuitEndWaypointDist: float = 5
 
-    wheelbase:float=3.5
+    wheelbase: float = 3.5
 
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
@@ -158,6 +158,8 @@ class Agent(MeshNode):
 
         self.dispatchTable['set_follow_axis'] = lambda: self.followAxis
         self.dispatchTable['get_follow_axis'] = self._setFollowAxis
+
+        self.dispatchTable['get_fwd_velocity'] = lambda: self._getCarForwardVelocity()
 
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
@@ -348,10 +350,21 @@ class Agent(MeshNode):
         pass
 
     def _frameUpdate(self):
-        #vel = self._getCarForwardVelocity()
-        self.velocityReference = self.waypointFollowSpeed
-        self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+        # vel = self._getCarForwardVelocity()
+        if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
+            self.velocityReference = self.waypointFollowSpeed
+            self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+        elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
+            self.velocityReference = self._runFollowPDLoop()
+            self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+        elif self.drivingBehavior == AgentDrivingBehavior.MERGING:
+            pass
+        elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
+            self.velocityReference = 0
+            self.angularVelocityReference = 0
+
         self.drive_vehicle()
+
         # self.drive_vehicle(1, 0, 0)
 
     def _setFollowTarget(self, target: AgentRepresentation):
@@ -398,16 +411,20 @@ class Agent(MeshNode):
         diff_along_axis: float = pose_difference.position.dot(self.followAxis)
         return diff_along_axis
 
+    def _followTargetVelocity(self) -> float:
+        return MeshNode.call(self.followTarget.ssid, Request('get_fwd_velocity')).response
+
     def _runFollowPDLoop(self, distance=None):
         if distance is None:
             distance = self._distanceToFollowTarget()
         currentError = distance - self.followDistance
         if self.PD_lastError is None:
             self.PD_lastError = currentError
-        dError = currentError - self.PD_lastError
+        dError = (currentError - self.PD_lastError) / 0.01
         pTerm = DIST_P_GAIN * currentError
         dTerm = DIST_D_GAIN * dError
-        return pTerm + dTerm
+        self.PD_lastError = currentError
+        return pTerm + dTerm + self._followTargetVelocity()
 
     def _setFollowAxis(self, axis: Rotation2d):
         self.followAxis = axis
@@ -427,7 +444,7 @@ class Agent(MeshNode):
     def _purePursuitAngleToAngularVelocity(self):
         vel = self._getCarForwardVelocity()
         angle = self._getPurePursuitAngleCommand()
-        rads = self.driveController.compute_fk(angle, vel,1)
+        rads = self.driveController.compute_fk(angle, vel, 1)
         return np.degrees(rads)
 
     def _getSimulation(self, t_end: float = 5):
