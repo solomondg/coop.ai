@@ -24,6 +24,7 @@ class LaneMerge:
         self.world = self.carla_client.load_world('Town05')
         settings = self.world.get_settings()
         settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 0.01
         self.world.apply_settings(settings)
 
     def place_spectator(self):
@@ -75,7 +76,6 @@ def gen_waypoints_straight_x(location):
 
 
 if __name__ == '__main__':
-    lane_merge_setup = LaneMerge()
+    lane_merge_setup = LaneMerge(ip='172.27.51.171')
     lane_merge_setup.setup()
-
     lane_merge_setup.run()
