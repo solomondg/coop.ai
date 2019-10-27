@@ -1,3 +1,5 @@
+from time import sleep, time
+
 import carla
 
 from mathutil.Rotation2d import Rotation2d
@@ -6,6 +8,7 @@ from services.MeshNode import MeshNode
 from apis.Messages import Request
 from mathutil.Translation2d import Translation2d
 
+enforce_dt=0.1
 
 class LaneMerge:
     def __init__(self, ip='localhost', port=2000):
@@ -67,6 +70,7 @@ class LaneMerge:
         lane_width = 4  # m
         lane_change_dist = 10  # m
         lane_change_x = None
+        t_last = time()
         while True:
             n_tick += 1
             self.world.tick()
@@ -100,6 +104,11 @@ class LaneMerge:
                 #self.car_b._setDrivingBehavior(AgentDrivingBehavior.MERGING)
                 self.car_c._setMerge(AgentRepresentation.fromAgent(self.car_a), AgentRepresentation.fromAgent(self.car_b))
             self.place_spectator(x=car_a_loc.x, y=car_a_loc.y)
+
+            dt = time() - t_last
+            t_last = time()
+            if dt < enforce_dt:
+                sleep(enforce_dt-dt)
 
 
 def gen_waypoints_straight_x(location, original_y, init_dist=10, dist=1, num_points=25):

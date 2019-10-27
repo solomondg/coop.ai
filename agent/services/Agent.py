@@ -190,7 +190,7 @@ class Agent(MeshNode):
         self.velocityReference_default = 0
         self.angularVelocityReference = 0
 
-        self.velocityProfile = get_velocity_profile(0,0,5)
+        self.velocityProfile = get_velocity_profile(0, 0, 5)
 
     def isAgentNode(self) -> bool:
         return True
@@ -366,7 +366,7 @@ class Agent(MeshNode):
     def negotiatePriority(self, other: AgentRepresentation):
         ourMode = self.drivingMode
         theirMode = MeshNode.call(other.port, Request('get_driving_mode')).response
-        if ourMode > theirMode:
+        if ourMode.value > theirMode.value:
             return other
         else:
             return AgentRepresentation.fromAgent(self)
@@ -380,25 +380,28 @@ class Agent(MeshNode):
         rotsV = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         self.vehiclePose.translation = Translation2d(trns.x, trns.y)
         self.vehiclePose.rotation = Rotation2d(rotsV.x, rotsV.y)
+        debug = False
         dbg = self.carla_world.debug
         for i in self.waypointList:
             loc = carla.Location(i.x, i.y, 0.5)
-            dbg.draw_point(
-                loc,
-                0.1,
-                carla.Color(0, 255, 0),
-                0.02
-            )
+            if debug:
+                dbg.draw_point(
+                    loc,
+                    0.1,
+                    carla.Color(0, 255, 0),
+                    0.02
+                )
 
         pointPt = self.vehiclePose.translation + Translation2d(5, 0).rotateByOrigin(self.vehiclePose.rotation)
         loc = carla.Location(pointPt.x, pointPt.y, 0.5)
-        dbg.draw_point(
-            loc, 0.1, carla.Color(255, 0, 0), 0.01
-        )
+        if debug:
+            dbg.draw_point(
+                loc, 0.1, carla.Color(255, 0, 0), 0.01
+            )
 
         if len(self.waypointList) > 0:
             loc = carla.Location(self.waypointList[0].x, self.waypointList[0].y, 0.51)
-            dbg.draw_point(loc, 0.2, carla.Color(0, 0, 255), 0.01)
+            if debug: dbg.draw_point(loc, 0.2, carla.Color(0, 0, 255), 0.01)
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
             if self.collisionDetection:
                 a = self._getAnyCollisions()
@@ -424,7 +427,8 @@ class Agent(MeshNode):
         elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
             self.velocityReference = 0
             self.angularVelocityReference = 0
-        else:return
+        else:
+            return
         self.drive_vehicle()
 
         # self.drive_vehicle(1, 0, 0)
@@ -530,35 +534,38 @@ class Agent(MeshNode):
 
     def _solveForProfileToAvoidCollision(self, futureLitigator: AgentRepresentation):
         solved = False
-        minDist: float = 5  # meter
+        minDist: float = 3  # meter
         otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
         while not solved:
             log = self._getSimulation(5.0)
             closest = 1000
             for i in range(len(log)):
-                p_us: Translation2d = log[i][1]
-                p_them: Translation2d = otherProfile[i][1]
-                if (p_us - p_them).l2 < closest:
-                    closest = (p_us - p_them).l2
+                p_us: Pose2d = log[i][1]
+                p_them: Pose2d = otherProfile[i][1]
+                if (p_us.translation - p_them.translation).l2 < closest:
+                    closest = (p_us.translation - p_them.translation).l2
             if closest < minDist:
                 speed = self.velocityReference
                 if speed == 0.0:
                     raise Exception("Collision unavoidable!")
                 self.velocityReference = max(self.velocityReference - 0.2, 0.0)
-                print(f"Reducing speed {self.velocityReference+0.2}->{self.velocityReference}")
+                print(f"Reducing speed {self.velocityReference + 0.2}->{self.velocityReference}")
             else:
                 solved = True
 
     def _willCollide(self, futureLitigator: AgentRepresentation):
-        minDist: float = 5
-        otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
+        minDist: float = 3
+        otherProfile = MeshNode.call(futureLitigator.port, Request('get_simulation', args=[5])).response
         log = self._getSimulation(5.0)
         closest = 1000
         for i in range(len(log)):
-            p_us: Translation2d = log[i][1]
-            p_them: Translation2d = otherProfile[i][1]
-            if (p_us - p_them).l2 < closest:
-                closest = (p_us - p_them).l2
+            try:
+                p_us: Pose2d = log[i][1]
+                p_them: Pose2d = otherProfile[i][1]
+                if (p_us.translation - p_them.translation).l2 < closest:
+                    closest = (p_us.translation - p_them.translation).l2
+            except IndexError:
+                break
         if (closest < minDist):
             if self.negotiatePriority(futureLitigator) == futureLitigator:
                 print(f"Collision detected between {self.ssid} and {futureLitigator.ssid}! Min spacing of {closest}")
@@ -589,8 +596,8 @@ def test_findNodes():
     coordDict = {}
     for i in range(N):
         a = Agent(ssid=f'AGENT-{str(i)}')
-        pos = Pose2d(trans=Translation2d(random(),random()),rot=Rotation2d(1,0))
-        coordDict[AgentRepresentation.fromAgent(a)] = [pos.x,pos.y]
+        pos = Pose2d(trans=Translation2d(random(), random()), rot=Rotation2d(1, 0))
+        coordDict[AgentRepresentation.fromAgent(a)] = [pos.x, pos.y]
         MeshNode.call(a.portNumber, Request("set_pose", args=[pos]))
         objs.append(a)
 

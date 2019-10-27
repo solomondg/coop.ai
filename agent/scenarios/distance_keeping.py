@@ -5,7 +5,9 @@ from services.Agent import Agent, AgentDrivingBehavior, AgentRepresentation
 from services.MeshNode import MeshNode
 from apis.Messages import Request
 from mathutil.Translation2d import Translation2d
+from time import time,sleep
 
+enforce_dt = 0.1
 
 class DistanceKeeping:
     def __init__(self, ip='localhost', port=2000):
@@ -75,6 +77,7 @@ class DistanceKeeping:
         self.car_b.followTarget = AgentRepresentation.fromAgent(self.car_a)
         self.car_b.followDistance = 3
 
+        t_last = time()
         while True:
             n_tick += 1
             self.world.tick()
@@ -86,6 +89,10 @@ class DistanceKeeping:
             self.car_b._setWaypoints(gen_waypoints_straight_x(car_a_loc, start_y))
 
             self.place_spectator(x=car_a_loc.x, y=car_a_loc.y)
+            dt = time() - t_last
+            t_last = time()
+            if dt < enforce_dt:
+                sleep(enforce_dt-dt)
 
 
 def gen_waypoints_straight_x(location, original_y, init_dist=10, dist=1, num_points=25):

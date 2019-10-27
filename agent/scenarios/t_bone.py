@@ -1,4 +1,4 @@
-from time import time
+from time import time, sleep
 
 import carla
 
@@ -8,6 +8,7 @@ from services.MeshNode import MeshNode
 from apis.Messages import Request
 from mathutil.Translation2d import Translation2d
 
+enforce_dt = 0.1
 
 class TBone:
     def __init__(self, ip='localhost', port=2000):
@@ -95,6 +96,9 @@ class TBone:
             if n_tick == 1000:
                 break
             print(f"dt: {time() - last_tick_t}")
+            dt = time() - last_tick_t
+            if dt < enforce_dt:
+                sleep(enforce_dt-dt)
             last_tick_t = time()
 
 
