@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import List
 from random import random, shuffle
@@ -58,7 +59,6 @@ VEL_P_GAIN_ACC = 1
 VEL_P_GAIN_BRK = 0.02
 VEL_FORBIDDEN_GAIN = 0.1
 
-
 DIST_P_GAIN = 5
 DIST_D_GAIN = 10
 
@@ -100,13 +100,17 @@ class Agent(MeshNode):
 
     velocityReference: float = 0.0
 
-    waypointFollowSpeed: float = 20.0
+    waypointFollowSpeed: float = 8.0
 
     followAxis: Rotation2d
 
     reee: float = 0.0
 
     waypointList: List[Translation2d]
+
+    purePursuitEndWaypointDist: float = 5
+
+    wheelbase: float = 3.5
 
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
@@ -155,6 +159,8 @@ class Agent(MeshNode):
         self.dispatchTable['set_follow_axis'] = lambda: self.followAxis
         self.dispatchTable['get_follow_axis'] = self._setFollowAxis
 
+        self.dispatchTable['get_fwd_velocity'] = lambda: self._getCarForwardVelocity()
+
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
 
@@ -164,7 +170,7 @@ class Agent(MeshNode):
 
         self.drivingMode = AgentDrivingMode.IDLE
         self.drivingBehavior = AgentDrivingBehavior.WAITING
-        self.driveController = DriveController(2.5)
+        self.driveController = DriveController(self.wheelbase)
 
         self.waypointList = []
 
@@ -205,7 +211,8 @@ class Agent(MeshNode):
                     known_agents.append(AgentRepresentation(port=port, ssid=ssid))
 
         return sorted(known_agents, key= \
-            lambda a: np.linalg.norm((MeshNode.call(a.port, Request('get_pose')).response.translation - self.vehiclePose.translation).position.asNDArray()))
+            lambda a: np.linalg.norm((MeshNode.call(a.port, Request(
+                'get_pose')).response.translation - self.vehiclePose.translation).position.asNDArray()))
 
         # To build graph:
 
@@ -301,13 +308,14 @@ class Agent(MeshNode):
         # control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
         self.fuck_ice(self.velocityReference, self.angularVelocityReference)
 
-    def fuck_ice(self, forwardVel:float, angularVel:float):
+    def fuck_ice(self, forwardVel: float, angularVel: float):
         conv = 0.01
         vel: carla.Vector3D = self.carla_vehicle.get_velocity()
         dir: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         fwd = self._getCarForwardVelocity()
         err = forwardVel - fwd
-        addr = carla.Vector3D(x=dir.x*fwd+dir.x*err*conv, y=dir.y*fwd+dir.y*err*conv, z=vel.z+dir.z*err*conv)
+        addr = carla.Vector3D(x=dir.x * fwd + dir.x * err * conv, y=dir.y * fwd + dir.y * err * conv,
+                              z=vel.z + dir.z * err * conv)
         self.carla_vehicle.set_velocity(addr)
         self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=angularVel))
 
@@ -342,11 +350,22 @@ class Agent(MeshNode):
         pass
 
     def _frameUpdate(self):
-        vel = self._getCarForwardVelocity()
-        throttle, brake = self._getThrottleAndBrake(vel)
-        wheel = 0.0
-        self.drive_vehicle(throttle, brake, wheel)
-        #self.drive_vehicle(1, 0, 0)
+        # vel = self._getCarForwardVelocity()
+        if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
+            self.velocityReference = self.waypointFollowSpeed
+            self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+        elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
+            self.velocityReference = self._runFollowPDLoop()
+            self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+        elif self.drivingBehavior == AgentDrivingBehavior.MERGING:
+            pass
+        elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
+            self.velocityReference = 0
+            self.angularVelocityReference = 0
+
+        self.drive_vehicle()
+
+        # self.drive_vehicle(1, 0, 0)
 
     def _setFollowTarget(self, target: AgentRepresentation):
         self.followTarget = target
@@ -370,12 +389,12 @@ class Agent(MeshNode):
         if vel is None:
             self._getCarForwardVelocity()
         error = vel - self.velocityReference
-        self.reee += -error*0.01
+        self.reee += -error * 0.01
         if error > 0:  # actual speed > desired, need to brake
             throttle = 0.0
             brake = VEL_P_GAIN_BRK * math.fabs(error)
         else:  # actual speed < desired, need to accelerate
-            throttle = VEL_P_GAIN_ACC * math.fabs(error) + self.reee*VEL_FORBIDDEN_GAIN
+            throttle = VEL_P_GAIN_ACC * math.fabs(error) + self.reee * VEL_FORBIDDEN_GAIN
             brake = 0.0
         return (throttle, brake)
 
@@ -392,22 +411,50 @@ class Agent(MeshNode):
         diff_along_axis: float = pose_difference.position.dot(self.followAxis)
         return diff_along_axis
 
+    def _followTargetVelocity(self) -> float:
+        return MeshNode.call(self.followTarget.ssid, Request('get_fwd_velocity')).response
+
     def _runFollowPDLoop(self, distance=None):
         if distance is None:
             distance = self._distanceToFollowTarget()
         currentError = distance - self.followDistance
         if self.PD_lastError is None:
             self.PD_lastError = currentError
-        dError = currentError - self.PD_lastError
+        dError = (currentError - self.PD_lastError) / 0.01
         pTerm = DIST_P_GAIN * currentError
         dTerm = DIST_D_GAIN * dError
-        return pTerm + dTerm
+        self.PD_lastError = currentError
+        return pTerm + dTerm + self._followTargetVelocity()
 
     def _setFollowAxis(self, axis: Rotation2d):
         self.followAxis = axis
 
     def _setWaypoints(self, points: List[Translation2d]):
         self.waypointList = points
+
+    def _getPurePursuitAngleCommand(self):
+        wp0 = self.waypointList[0]
+        if (wp0 - self.vehiclePose.translation).l2 <= self.purePursuitEndWaypointDist:
+            self.waypointList.pop(0)
+            wp0 = self.waypointList[0]
+
+        rel = wp0 - self.vehiclePose.translation
+        return self.driveController.compute_steering_ik(rel, self.vehiclePose.rotation)
+
+    def _purePursuitAngleToAngularVelocity(self):
+        vel = self._getCarForwardVelocity()
+        angle = self._getPurePursuitAngleCommand()
+        rads = self.driveController.compute_fk(angle, vel, 1)
+        return np.degrees(rads)
+
+    def _getSimulation(self, t_end: float = 5):
+        log = self.driveController.predict(
+            velocity_profile=self.driveController.get_velocity_profile(
+                start_vel=self.waypointFollowSpeed,
+                end_vel=self.waypointFollowSpeed, end_time=5),
+            waypoints=deepcopy(self.waypointList), pose0=deepcopy(self.vehiclePose), predict_dt=0.01, predict_end=t_end
+        )
+        return log
 
 
 def test_findSSIDs():
@@ -474,6 +521,6 @@ def test_pathing():
 
 if __name__ == "__main__":
     # test_findSSIDs()
-    #test_findNodes()
+    # test_findNodes()
     pass
     # test_pathing()
