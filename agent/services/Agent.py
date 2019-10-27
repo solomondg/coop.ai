@@ -64,6 +64,11 @@ DIST_P_GAIN = 5
 DIST_D_GAIN = 20
 
 
+def get_velocity_profile(start_vel, end_vel, end_time=5):
+    profile = lambda t: end_vel if t > end_time else start_vel + t * (end_vel - start_vel) / end_time
+    return profile
+
+
 class AgentDrivingMode(Enum):
     ASSHOLE = -1
     MERGING_REQ = 0
@@ -164,6 +169,10 @@ class Agent(MeshNode):
 
         self.dispatchTable['get_fwd_velocity'] = lambda: self._getCarForwardVelocity()
 
+        self.dispatchTable['get_simulation'] = self._getSimulation
+
+        self.collisionDetection = False
+
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
 
@@ -178,7 +187,10 @@ class Agent(MeshNode):
         self.waypointList = []
 
         self.velocityReference = 0
+        self.velocityReference_default = 0
         self.angularVelocityReference = 0
+
+        self.velocityProfile = get_velocity_profile(0,0,5)
 
     def isAgentNode(self) -> bool:
         return True
@@ -353,9 +365,11 @@ class Agent(MeshNode):
 
     def negotiatePriority(self, other: AgentRepresentation):
         ourMode = self.drivingMode
-        theirMode = self.dispatch(Request('intra_graph_call', args=[Request('get_driving_mode'), other])).response
+        theirMode = MeshNode.call(other.port, Request('get_driving_mode')).response
         if ourMode > theirMode:
-            self._determineYieldAction(ourMode, theirMode)
+            return other
+        else:
+            return AgentRepresentation.fromAgent(self)
 
     def _determineYieldAction(self, ourMode: AgentDrivingMode, theirMode: AgentDrivingMode):
         pass
@@ -386,6 +400,11 @@ class Agent(MeshNode):
             loc = carla.Location(self.waypointList[0].x, self.waypointList[0].y, 0.51)
             dbg.draw_point(loc, 0.2, carla.Color(0, 0, 255), 0.01)
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
+            if self.collisionDetection:
+                a = self._getAnyCollisions()
+                if a is not None:
+                    print(f"Solving for collision with {a.ssid}")
+                    self._solveForProfileToAvoidCollision(a)
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
             print(f"AM {self.name}, GOING {self.velocityReference}")
@@ -394,21 +413,14 @@ class Agent(MeshNode):
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.MERGING:
             self.mergeStartTime += 0.01
-            print(f"Mrge start: {self.mergeStartTime}")
             if self.mergeStartTime >= self.mergeDwell:
-                print("Switching to maintian distance")
                 self.drivingBehavior = AgentDrivingBehavior.MAINTAIN_DISTANCE
-                print(f"retrieving waypoints from {self.followTarget.ssid}")
                 self.waypointList = deepcopy(MeshNode.call(
                     self.followTarget.port,
                     Request("get_waypoints")
                 ).response)
-                print("DUN DUN UDNNNN")
-            print("running pd loop")
             self.velocityReference = self._runFollowPDLoop()
-            print("running pp")
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
-            print("done")
         elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
             self.velocityReference = 0
             self.angularVelocityReference = 0
@@ -517,7 +529,47 @@ class Agent(MeshNode):
         return log
 
     def _solveForProfileToAvoidCollision(self, futureLitigator: AgentRepresentation):
-        pass
+        solved = False
+        minDist: float = 5  # meter
+        otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
+        while not solved:
+            log = self._getSimulation(5.0)
+            closest = 1000
+            for i in range(len(log)):
+                p_us: Translation2d = log[i][1]
+                p_them: Translation2d = otherProfile[i][1]
+                if (p_us - p_them).l2 < closest:
+                    closest = (p_us - p_them).l2
+            if closest < minDist:
+                speed = self.velocityReference
+                if speed == 0.0:
+                    raise Exception("Collision unavoidable!")
+                self.velocityReference = max(self.velocityReference - 0.2, 0.0)
+                print(f"Reducing speed {self.velocityReference+0.2}->{self.velocityReference}")
+            else:
+                solved = True
+
+    def _willCollide(self, futureLitigator: AgentRepresentation):
+        minDist: float = 5
+        otherProfile = MeshNode.call(futureLitigator.port, Request("get_simulation")).response
+        log = self._getSimulation(5.0)
+        closest = 1000
+        for i in range(len(log)):
+            p_us: Translation2d = log[i][1]
+            p_them: Translation2d = otherProfile[i][1]
+            if (p_us - p_them).l2 < closest:
+                closest = (p_us - p_them).l2
+        if (closest < minDist):
+            if self.negotiatePriority(futureLitigator) == futureLitigator:
+                print(f"Collision detected between {self.ssid} and {futureLitigator.ssid}! Min spacing of {closest}")
+        return closest < minDist
+
+    def _getAnyCollisions(self):
+        allNodes = [i for i in self.graph.nodes if i is not AgentRepresentation.fromAgent(self)]
+        for agent in allNodes:
+            if self._willCollide(agent):
+                return agent
+        return None
 
 
 def test_findSSIDs():
@@ -532,13 +584,13 @@ def test_findSSIDs():
 
 
 def test_findNodes():
-    N = 4
+    N = 7
     objs = []
     coordDict = {}
     for i in range(N):
         a = Agent(ssid=f'AGENT-{str(i)}')
-        pos = np.asarray([random(), random()])
-        coordDict[AgentRepresentation.fromAgent(a)] = pos
+        pos = Pose2d(trans=Translation2d(random(),random()),rot=Rotation2d(1,0))
+        coordDict[AgentRepresentation.fromAgent(a)] = [pos.x,pos.y]
         MeshNode.call(a.portNumber, Request("set_pose", args=[pos]))
         objs.append(a)
 
@@ -565,9 +617,6 @@ def test_pathing():
     coordDict = {}
     for i in range(N):
         a = Agent(ssid=f'AGENT-{str(i)}')
-        pos = np.asarray([random(), random()])
-        coordDict[AgentRepresentation.fromAgent(a)] = pos
-        MeshNode.call(a.portNumber, Request("set_pose", args=[pos]))
         objs.append(a)
 
     (graph, traversed) = MeshNode.call(objs[0].portNumber,
@@ -584,6 +633,6 @@ def test_pathing():
 
 if __name__ == "__main__":
     # test_findSSIDs()
-    # test_findNodes()
+    test_findNodes()
     pass
     # test_pathing()
