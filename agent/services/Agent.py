@@ -452,7 +452,7 @@ class Agent(MeshNode):
     def _purePursuitAngleToAngularVelocity(self):
         vel = self._getCarForwardVelocity()
         angle = self._getPurePursuitAngleCommand()
-        rads = self.driveController.compute_fk(angle, vel, 1)
+        -rads = self.driveController.compute_fk(angle, vel, 1)
         return np.degrees(rads.dtheta)
 
     def _getSimulation(self, t_end: float = 5):
