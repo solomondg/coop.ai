@@ -30,10 +30,10 @@ class LaneMerge:
         settings.fixed_delta_seconds = 0.01
         self.world.apply_settings(settings)
 
-    def place_spectator(self):
+    def place_spectator(self, x=-205, y=-90, z=45, pitch=-90, yaw=0):
         spectator = [i for i in self.world.get_actors() if i.type_id == 'spectator'][0]
-        spectator.set_transform(carla.Transform(carla.Location(x=-205, y=-90, z=45),
-                                                carla.Rotation(pitch=-90, yaw=0, roll=0)))
+        spectator.set_transform(carla.Transform(carla.Location(x=x, y=y, z=z),
+                                                carla.Rotation(pitch=pitch, yaw=yaw, roll=0)))
 
         self.spectators.append(spectator)
 
@@ -55,7 +55,7 @@ class LaneMerge:
         MeshNode.call(self.car_a.portNumber, Request('get_graph_recursive', args=[[]], longRunning=True))
 
         self.car_a.spawn_vehicle(x=-205, y=-91.75, z=0.1, yaw=0)
-        self.car_b.spawn_vehicle(x=-215, y=-91.75, z=0.1, yaw=0)
+        self.car_b.spawn_vehicle(x=-212, y=-91.75, z=0.1, yaw=0)
         self.car_c.spawn_vehicle(x=-205, y=-88.25, z=0.1, yaw=0)
 
     def run(self):
@@ -99,6 +99,7 @@ class LaneMerge:
                 print("Enable merge")
                 #self.car_b._setDrivingBehavior(AgentDrivingBehavior.MERGING)
                 self.car_c._setMerge(AgentRepresentation.fromAgent(self.car_a), AgentRepresentation.fromAgent(self.car_b))
+            self.place_spectator(x=car_a_loc.x, y=car_a_loc.y)
 
 
 def gen_waypoints_straight_x(location, original_y, init_dist=10, dist=1, num_points=25):

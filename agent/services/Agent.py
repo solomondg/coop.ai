@@ -79,6 +79,7 @@ class AgentDrivingBehavior(Enum):
     MAINTAIN_DISTANCE = 1
     MERGING = 2
     WAITING = 3
+    PASSIVE = 4
 
 
 class Agent(MeshNode):
@@ -310,15 +311,23 @@ class Agent(MeshNode):
         # control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
         self.fuck_ice(self.velocityReference, self.angularVelocityReference)
 
+    overridespeed = False
+
     def fuck_ice(self, forwardVel: float, angularVel: float):
         conv = 0.01
         vel: carla.Vector3D = self.carla_vehicle.get_velocity()
         dir: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         fwd = self._getCarForwardVelocity()
         err = forwardVel - fwd
-        addr = carla.Vector3D(x=max(dir.x * fwd + dir.x * err * conv, 0), y=dir.y * fwd + dir.y * err * conv,
-                              z=vel.z + dir.z * err * conv)
+        if not self.overridespeed:
+            addr = carla.Vector3D(x=max(dir.x * fwd + dir.x * err * conv, 0), y=dir.y * fwd + dir.y * err * conv,
+                                  z=vel.z + dir.z * err * conv)
+        else:
+            addr = carla.Vector3D(x=dir.x * fwd + dir.x * err * conv, y=dir.y * fwd + dir.y * err * conv,
+                                  z=vel.z + dir.z * err * conv)
+
         self.carla_vehicle.set_velocity(addr)
+        print(f"AM {self.name} GOING {addr}")
         self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=angularVel))
 
     def _setDrivingMode(self, mode: AgentDrivingMode):
@@ -379,7 +388,7 @@ class Agent(MeshNode):
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
-
+            print(f"AM {self.name}, GOING {self.velocityReference}")
         elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
             self.velocityReference = self._runFollowPDLoop()
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
@@ -403,7 +412,7 @@ class Agent(MeshNode):
         elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
             self.velocityReference = 0
             self.angularVelocityReference = 0
-
+        else:return
         self.drive_vehicle()
 
         # self.drive_vehicle(1, 0, 0)
@@ -417,15 +426,15 @@ class Agent(MeshNode):
     def _setDrivingBehavior(self, behavior: AgentDrivingBehavior):
         self.drivingBehavior = behavior
 
-    mergeStartTime: float=0.0
+    mergeStartTime: float = 0.0
     mergeDwell: float = 5.0
+
     def _setMerge(self, frontCar: AgentRepresentation, backCar: AgentRepresentation):
         self.followTarget = frontCar
         self.drivingBehavior = AgentDrivingBehavior.MERGING
         MeshNode.call(backCar.port, Request("set_follow_target", args=[AgentRepresentation.fromAgent(self)])).response
-        #self.mergeStartTime = time()
+        # self.mergeStartTime = time()
         self.mergeStartTime = 0.0
-
 
     def _setVelocityRef(self, vref: float):
         self.velocityReference = vref
