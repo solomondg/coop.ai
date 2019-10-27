@@ -1,8 +1,3 @@
-Flask
-connexion
-Flask-Injector
-fastavro
 pyzmq
 networkx
-jsonrpcserver
-jsonrpcclient
+
