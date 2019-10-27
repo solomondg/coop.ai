@@ -458,6 +458,7 @@ class Agent(MeshNode):
     def _getPurePursuitAngleCommand(self):
         wp0 = self.waypointList[0]
         if (wp0 - self.vehiclePose.translation).l2 <= self.purePursuitEndWaypointDist:
+            print("yeeted the FUCK outta a waypoint")
             self.waypointList.pop(0)
             wp0 = self.waypointList[0]
 
@@ -468,7 +469,7 @@ class Agent(MeshNode):
         vel = self._getCarForwardVelocity()
         angle = self._getPurePursuitAngleCommand()
         rads = self.driveController.compute_fk(angle, vel, 1)
-        return np.degrees(rads.dtheta)
+        return -np.degrees(rads.dtheta)
 
     def _getSimulation(self, t_end: float = 5):
         log = self.driveController.predict(
