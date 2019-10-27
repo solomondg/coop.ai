@@ -24,6 +24,7 @@ class DriveController:
         heading is global. positive x is forwards, positive y is left, positive heading is counterclockwise
         """
         dheading = velocity / self.wheelbase_length * np.tan(steering_angle) * dt
+        #print(velocity*dt, dheading)
         return Twist2d(velocity * dt, 0, dheading)
 
     # def compute_steering_ik(self, target_x, target_y, current_heading):
@@ -101,6 +102,7 @@ class DriveController:
         for t in np.linspace(0, predict_end, int(predict_end / predict_dt), endpoint=False):
 
             if (pose.translation - waypoints[0]).l2 <= margin:
+                print("Dropping first waypoint")
                 waypoints.pop(0)
 
             if len(waypoints) == 0:
@@ -116,6 +118,10 @@ class DriveController:
             #pose = pose.exp(twist)
             pose.rotation = pose.rotation.rotateBy(Rotation2d.createFromRadians(twist.dtheta))
             pose.translation = pose.translation.translateBy(Translation2d(twist.dx,twist.dy).rotateByOrigin(pose.rotation))
-            log.append([t, pose])
+            log.append([t,
+                        Pose2d(
+                            trans=Translation2d(pose.translation.x,pose.translation.y),
+                            rot=Rotation2d(pose.rotation.cos, pose.rotation.sin)
+                        ) ])
 
         return log
