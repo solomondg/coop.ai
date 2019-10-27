@@ -1,4 +1,5 @@
 import math
+from time import time
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List
@@ -152,6 +153,7 @@ class Agent(MeshNode):
         self.dispatchTable['get_waypoint_follow_speed'] = lambda: self.drivingBehavior
 
         self.dispatchTable['set_waypoints'] = self._setWaypoints
+        self.dispatchTable['get_waypoints'] = lambda: self.waypointList
 
         self.dispatchTable['get_throttle_brake'] = lambda: self.drivingBehavior
         self.dispatchTable['get_wheel'] = lambda: self.drivingBehavior
@@ -381,7 +383,14 @@ class Agent(MeshNode):
             self.velocityReference = self._runFollowPDLoop()
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.MERGING:
-            pass
+            if (time() - self.mergeStartTime) >= self.mergeDwell:
+                self.drivingBehavior = AgentDrivingBehavior.MAINTAIN_DISTANCE
+                self.waypointList = MeshNode.call(
+                    self.followTarget.port,
+                    Request("get_waypoints")
+                ).response
+            self.velocityReference = self._runFollowPDLoop()
+            self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
             self.velocityReference = 0
             self.angularVelocityReference = 0
@@ -398,6 +407,14 @@ class Agent(MeshNode):
 
     def _setDrivingBehavior(self, behavior: AgentDrivingBehavior):
         self.drivingBehavior = behavior
+
+    mergeStartTime: float=0.0
+    mergeDwell: float = 5.0
+    def _setMerge(self, frontCar: AgentRepresentation, backCar: AgentRepresentation):
+        self.drivingBehavior = AgentDrivingBehavior.MERGING
+        MeshNode.call(backCar.port, Request("set_follow_target", AgentRepresentation.fromAgent(self))).response
+        self.mergeStartTime = time()
+
 
     def _setVelocityRef(self, vref: float):
         self.velocityReference = vref
