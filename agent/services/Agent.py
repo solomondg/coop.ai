@@ -60,7 +60,7 @@ VEL_P_GAIN_BRK = 0.02
 VEL_FORBIDDEN_GAIN = 0.1
 
 DIST_P_GAIN = 5
-DIST_D_GAIN = 10
+DIST_D_GAIN = 20
 
 
 class AgentDrivingMode(Enum):
@@ -93,7 +93,7 @@ class Agent(MeshNode):
     drivingMode: AgentDrivingMode = AgentDrivingMode.IDLE
     drivingBehavior: AgentDrivingBehavior = AgentDrivingBehavior.WAITING
     driveController: DriveController
-    followTarget: AgentRepresentation
+    followTarget: AgentRepresentation = None
     followDistance: float = 8.0  # 3 meter
 
     PD_lastError: float = None
@@ -428,14 +428,13 @@ class Agent(MeshNode):
 
     def _distanceToFollowTarget(self) -> Translation2d:
         our_pose = self.vehiclePose
-        their_pose: Pose2d = self.dispatch(Request('intra_graph_call',
-                                                   args=[Request('get_pose'), self.followTarget])).response
+        their_pose: Pose2d = MeshNode.call(self.followTarget.port, Request('get_pose')).response
         pose_difference = their_pose.translation - our_pose.translation
-        diff_along_axis: float = pose_difference.position.dot(self.followAxis)
+        diff_along_axis: float = pose_difference.position.dot(self.followAxis.rotation)
         return diff_along_axis
 
     def _followTargetVelocity(self) -> float:
-        return MeshNode.call(self.followTarget.ssid, Request('get_fwd_velocity')).response
+        return MeshNode.call(self.followTarget.port, Request('get_fwd_velocity')).response
 
     def _runFollowPDLoop(self, distance=None):
         if distance is None:
@@ -469,7 +468,7 @@ class Agent(MeshNode):
         vel = self._getCarForwardVelocity()
         angle = self._getPurePursuitAngleCommand()
         rads = self.driveController.compute_fk(angle, vel, 1)
-        return -np.degrees(rads.dtheta)
+        return np.degrees(rads.dtheta)
 
     def _getSimulation(self, t_end: float = 5):
         log = self.driveController.predict(
