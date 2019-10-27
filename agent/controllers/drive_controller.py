@@ -24,6 +24,7 @@ class DriveController:
         heading is global. positive x is forwards, positive y is left, positive heading is counterclockwise
         """
         dheading = velocity / self.wheelbase_length * np.tan(steering_angle) * dt
+        print(velocity*dt, dheading)
         return Twist2d(velocity * dt, 0, dheading)
 
     # def compute_steering_ik(self, target_x, target_y, current_heading):
