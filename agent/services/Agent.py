@@ -89,8 +89,8 @@ class Agent(MeshNode):
         self.dispatchTable['intra_graph_call'] = self.execGraphRequest
         self.dispatchTable['ssid_lookup'] = self.getRepForSSID
 
-        self.dispatchTable['negotiatePriority']
-        self.dispatchTable['tick']
+        # self.dispatchTable['negotiatePriority']
+        # self.dispatchTable['tick']
 
         self.dispatchTable['connect_carla'] = self.connect_carla
         self.dispatchTable['spawn_vehicle'] = self.spawn_vehicle
@@ -227,7 +227,7 @@ class Agent(MeshNode):
 
     def spawn_vehicle(self, x, y, z, yaw, template_filter='*.tesla.*'):
         blueprint = self.carla_world.get_blueprint_library().filter(template_filter)[0]
-        spawnpoint = carla.Tranform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
+        spawnpoint = carla.Transform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
         self.carla_vehicle = self.carla_world.spawn_actor(blueprint, spawnpoint)
 
     def drive_vehicle(self, x, y, z, yaw):
