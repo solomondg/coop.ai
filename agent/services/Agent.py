@@ -354,12 +354,8 @@ class Agent(MeshNode):
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
             dbg = self.carla_world.debug
             for i in self.waypointList:
-                loc = carla.Location(i.x, i.y, 0.5)
-                dbg.draw_point(
-                    loc,
-                    0.5,
-                    carla.Color(0,255,0)
-                )
+                loc = carla.Location(i.x, i.y, 1.0)
+                dbg.draw_point(loc)
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
@@ -443,6 +439,7 @@ class Agent(MeshNode):
     def _getPurePursuitAngleCommand(self):
         wp0 = self.waypointList[0]
         if (wp0 - self.vehiclePose.translation).l2 <= self.purePursuitEndWaypointDist:
+            print("yeeted the FUCK outta a waypoint")
             self.waypointList.pop(0)
             wp0 = self.waypointList[0]
 
@@ -452,8 +449,8 @@ class Agent(MeshNode):
     def _purePursuitAngleToAngularVelocity(self):
         vel = self._getCarForwardVelocity()
         angle = self._getPurePursuitAngleCommand()
-        -rads = self.driveController.compute_fk(angle, vel, 1)
-        return np.degrees(rads.dtheta)
+        rads = self.driveController.compute_fk(angle, vel, 1)
+        return -np.degrees(rads.dtheta)
 
     def _getSimulation(self, t_end: float = 5):
         log = self.driveController.predict(
