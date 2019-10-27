@@ -1,7 +1,5 @@
 import carla
-
-from mathutil.Rotation2d import Rotation2d
-from services.Agent import Agent, AgentDrivingBehavior, AgentRepresentation
+from services.Agent import Agent, AgentDrivingBehavior
 from services.MeshNode import MeshNode
 from apis.Messages import Request
 from mathutil.Translation2d import Translation2d
@@ -12,8 +10,6 @@ class LaneMerge:
         self.carla_client = carla.Client(ip, port)
         self.world = None
         self.car_a = None
-        self.car_b = None
-        self.car_c = None
         self.spectators = []
 
     def setup(self):
@@ -44,26 +40,18 @@ class LaneMerge:
 
     def spawn_vehicles(self):
         self.car_a = Agent(ssid='car_a')
-        self.car_b = Agent(ssid='car_b')
-        self.car_c = Agent(ssid='car_c')
 
         self.car_a.connect_carla()
-        self.car_b.connect_carla()
-        self.car_c.connect_carla()
 
         # set up mesh network
         MeshNode.call(self.car_a.portNumber, Request('get_graph_recursive', args=[[]], longRunning=True))
 
-        self.car_a.spawn_vehicle(x=-205, y=-91.75, z=0.1, yaw=0)
-        self.car_b.spawn_vehicle(x=-215, y=-91.75, z=0.1, yaw=0)
-        self.car_c.spawn_vehicle(x=-205, y=-88.25, z=0.1, yaw=0)
+        self.car_a.spawn_vehicle(x=-205, y=-91.25, z=0.1, yaw=0)
 
     def run(self):
         self.world.tick()
         n_tick = 0
-        # self.car_a.velocityReference =8.9408 * 2
         start_y = self.car_a.carla_vehicle.get_location().y
-        start_y_2 = self.car_c.carla_vehicle.get_location().y
         lane_width = 4  # m
         lane_change_dist = 10  # m
         lane_change_x = None
@@ -71,34 +59,20 @@ class LaneMerge:
             n_tick += 1
             self.world.tick()
             MeshNode.call(self.car_a.portNumber, Request('tick', args=[], longRunning=True))
-            MeshNode.call(self.car_b.portNumber, Request('tick', args=[], longRunning=True))
-            MeshNode.call(self.car_c.portNumber, Request('tick', args=[], longRunning=True))
             car_a_loc = self.car_a.vehiclePose
-            car_b_loc = self.car_b.vehiclePose
-            car_c_loc = self.car_c.vehiclePose
 
             if n_tick == 100:
                 self.car_a._setDrivingBehavior(AgentDrivingBehavior.FOLLOW_WAYPOINTS)
-                self.car_b._setDrivingBehavior(AgentDrivingBehavior.MAINTAIN_DISTANCE)
-                self.car_b.followAxis = Rotation2d(1, 0)
-                self.car_b.followTarget = AgentRepresentation.fromAgent(self.car_a)
-                self.car_b.followDistance = 8
-
-                self.car_c._setDrivingBehavior(AgentDrivingBehavior.MAINTAIN_DISTANCE)
-                self.car_c.followAxis = Rotation2d(1, 0)
-                self.car_c.followTarget = AgentRepresentation.fromAgent(self.car_a)
-                self.car_c.followDistance = 8
-            self.car_a._setWaypoints(gen_waypoints_straight_x(car_a_loc, start_y))
-            self.car_b._setWaypoints(gen_waypoints_straight_x(car_b_loc, start_y))
+                print("Set to following waypoints mode")
             if n_tick < 500:
-                self.car_c._setWaypoints(gen_waypoints_straight_x(car_c_loc, start_y_2))
+                self.car_a._setWaypoints(gen_waypoints_straight_x(car_a_loc, start_y))
             else:
-                self.car_c._setWaypoints(gen_waypoints_straight_x(car_c_loc, start_y))
+                if lane_change_x is None:
+                    print(f"Lane change in {lane_change_dist} m")
+                    lane_change_x = car_a_loc.x + lane_change_dist
+                self.car_a._setWaypoints(gen_lanechange_waypoints(car_a_loc, start_y, start_y+lane_width, lane_change_x))
 
-            if n_tick == 500:
-                print("Enable merge")
-                #self.car_b._setDrivingBehavior(AgentDrivingBehavior.MERGING)
-                self.car_c._setMerge(AgentRepresentation.fromAgent(self.car_a), AgentRepresentation.fromAgent(self.car_b))
+            print(f"n_tick: {n_tick}\tangular_vel: {self.car_a.angularVelocityReference}")
 
 
 def gen_waypoints_straight_x(location, original_y, init_dist=10, dist=1, num_points=25):

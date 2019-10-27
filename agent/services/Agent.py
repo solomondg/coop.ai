@@ -357,40 +357,49 @@ class Agent(MeshNode):
         rotsV = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         self.vehiclePose.translation = Translation2d(trns.x, trns.y)
         self.vehiclePose.rotation = Rotation2d(rotsV.x, rotsV.y)
-        if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
-            dbg = self.carla_world.debug
-            for i in self.waypointList:
-                loc = carla.Location(i.x, i.y, 0.5)
-                dbg.draw_point(
-                    loc,
-                    0.1,
-                    carla.Color(0, 255, 0),
-                    0.02
-                )
-
-            pointPt = self.vehiclePose.translation + Translation2d(5,0).rotateByOrigin(self.vehiclePose.rotation)
-            loc = carla.Location(pointPt.x, pointPt.y, 0.5)
+        dbg = self.carla_world.debug
+        for i in self.waypointList:
+            loc = carla.Location(i.x, i.y, 0.5)
             dbg.draw_point(
-                loc, 0.1, carla.Color(255,0,0), 0.01
+                loc,
+                0.1,
+                carla.Color(0, 255, 0),
+                0.02
             )
 
+        pointPt = self.vehiclePose.translation + Translation2d(5, 0).rotateByOrigin(self.vehiclePose.rotation)
+        loc = carla.Location(pointPt.x, pointPt.y, 0.5)
+        dbg.draw_point(
+            loc, 0.1, carla.Color(255, 0, 0), 0.01
+        )
+
+        if len(self.waypointList) > 0:
+            loc = carla.Location(self.waypointList[0].x, self.waypointList[0].y, 0.51)
+            dbg.draw_point(loc, 0.2, carla.Color(0, 0, 255), 0.01)
+        if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
-            loc = carla.Location(self.waypointList[0].x, self.waypointList[0].y, 0.51)
-            dbg.draw_point(loc, 0.2, carla.Color(0,0,255),0.01)
 
         elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
             self.velocityReference = self._runFollowPDLoop()
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.MERGING:
-            if (time() - self.mergeStartTime) >= self.mergeDwell:
+            self.mergeStartTime += 0.01
+            print(f"Mrge start: {self.mergeStartTime}")
+            if self.mergeStartTime >= self.mergeDwell:
+                print("Switching to maintian distance")
                 self.drivingBehavior = AgentDrivingBehavior.MAINTAIN_DISTANCE
-                self.waypointList = MeshNode.call(
+                print(f"retrieving waypoints from {self.followTarget.ssid}")
+                self.waypointList = deepcopy(MeshNode.call(
                     self.followTarget.port,
                     Request("get_waypoints")
-                ).response
+                ).response)
+                print("DUN DUN UDNNNN")
+            print("running pd loop")
             self.velocityReference = self._runFollowPDLoop()
+            print("running pp")
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+            print("done")
         elif self.drivingBehavior == AgentDrivingBehavior.WAITING:
             self.velocityReference = 0
             self.angularVelocityReference = 0
@@ -413,8 +422,9 @@ class Agent(MeshNode):
     def _setMerge(self, frontCar: AgentRepresentation, backCar: AgentRepresentation):
         self.followTarget = frontCar
         self.drivingBehavior = AgentDrivingBehavior.MERGING
-        MeshNode.call(backCar.port, Request("set_follow_target", AgentRepresentation.fromAgent(self))).response
-        self.mergeStartTime = time()
+        MeshNode.call(backCar.port, Request("set_follow_target", args=[AgentRepresentation.fromAgent(self)])).response
+        #self.mergeStartTime = time()
+        self.mergeStartTime = 0.0
 
 
     def _setVelocityRef(self, vref: float):
