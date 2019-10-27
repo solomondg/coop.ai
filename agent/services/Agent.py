@@ -352,6 +352,15 @@ class Agent(MeshNode):
     def _frameUpdate(self):
         # vel = self._getCarForwardVelocity()
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
+            dbg = self.carla_world.debug
+            for i in self.waypointList:
+                loc = carla.Location(i.x, i.y, 0.5)
+                dbg.draw_point(
+                    loc,
+                    0.5,
+                    carla.Color(0,255,0),
+                    0.01
+                )
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
         elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
