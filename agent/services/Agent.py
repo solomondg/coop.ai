@@ -194,7 +194,7 @@ class Agent(MeshNode):
                     known_agents.append(AgentRepresentation(port=port, ssid=ssid))
 
         return sorted(known_agents, key= \
-            lambda a: np.linalg.norm(MeshNode.call(a.port, Request('get_coords')).response - self.gpscoords))
+            lambda a: np.linalg.norm((MeshNode.call(a.port, Request('get_coords')).response.translation - self.vehiclePose.translation).position.asNDArray()))
 
         # To build graph:
 
