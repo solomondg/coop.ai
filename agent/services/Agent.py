@@ -480,6 +480,9 @@ class Agent(MeshNode):
         )
         return log
 
+    def _solveForProfileToAvoidCollision(self, futureLitigator: AgentRepresentation):
+        pass
+
 
 def test_findSSIDs():
     N = 10
