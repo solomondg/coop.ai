@@ -54,8 +54,10 @@ DIST_THRESHHOLD = 0.01666667
 DIST_THRESHHOLD = 10000
 MAX_GRAPH_DEPTH = 3
 
-VEL_P_GAIN_ACC = 0.1
+VEL_P_GAIN_ACC = 1
 VEL_P_GAIN_BRK = 0.02
+VEL_FORBIDDEN_GAIN = 0.1
+
 
 DIST_P_GAIN = 5
 DIST_D_GAIN = 10
@@ -98,9 +100,11 @@ class Agent(MeshNode):
 
     velocityReference: float = 0.0
 
-    waypointFollowSpeed: float = 50.0
+    waypointFollowSpeed: float = 20.0
 
     followAxis: Rotation2d
+
+    reee: float = 0.0
 
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
@@ -288,7 +292,17 @@ class Agent(MeshNode):
 
     def drive_vehicle(self, throttle: float, brake: float, wheel: float):
         control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
-        self.carla_vehicle.apply_control(control)
+        self.fuck_ice(self.velocityReference, 0.0)
+
+    def fuck_ice(self, forwardVel:float, angularVel:float):
+        conv = 0.01
+        vel: carla.Vector3D = self.carla_vehicle.get_velocity()
+        dir: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
+        fwd = self._getCarForwardVelocity()
+        err = forwardVel - fwd
+        addr = carla.Vector3D(x=vel.x+dir.x*err*conv, y=vel.y+dir.y*err*conv, z=vel.z+dir.z*err*conv)
+        self.carla_vehicle.set_velocity(addr)
+        self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=10))
 
     def _setDrivingMode(self, mode: AgentDrivingMode):
         self.drivingMode = mode
@@ -325,6 +339,7 @@ class Agent(MeshNode):
         throttle, brake = self._getThrottleAndBrake(vel)
         wheel = 0.0
         self.drive_vehicle(throttle, brake, wheel)
+        #self.drive_vehicle(1, 0, 0)
 
     def _setFollowTarget(self, target: AgentRepresentation):
         self.followTarget = target
@@ -345,12 +360,14 @@ class Agent(MeshNode):
         if vel is None:
             self._getCarForwardVelocity()
         error = vel - self.velocityReference
+        self.reee += -error*0.01
         if error > 0:  # actual speed > desired, need to brake
             throttle = 0.0
             brake = VEL_P_GAIN_BRK * math.fabs(error)
         else:  # actual speed < desired, need to accelerate
-            throttle = VEL_P_GAIN_ACC * math.fabs(error)
+            throttle = VEL_P_GAIN_ACC * math.fabs(error) + self.reee*VEL_FORBIDDEN_GAIN
             brake = 0.0
+        print(error,self.reee, throttle,brake)
         return (throttle, brake)
 
     def _getCarForwardVelocity(self):

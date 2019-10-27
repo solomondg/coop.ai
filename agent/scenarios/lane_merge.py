@@ -41,20 +41,19 @@ class LaneMerge:
 
     def spawn_vehicles(self):
         self.car_a = Agent(ssid='car_a')
-        self.car_b = Agent(ssid='car_b')
-        self.car_c = Agent(ssid='car_c')
+        # self.car_b = Agent(ssid='car_b')
+        # self.car_c = Agent(ssid='car_c')
 
         self.car_a.connect_carla()
-        self.car_b.connect_carla()
-        self.car_c.connect_carla()
+        # self.car_b.connect_carla()
+        # self.car_c.connect_carla()
 
         # set up mesh network
         MeshNode.call(self.car_a.portNumber, Request('get_graph_recursive', args=[[]], longRunning=True))
 
-        self.car_a.spawn_vehicle(x=-205, y=-91.75, z=1, yaw=0)
+        self.car_a.spawn_vehicle(x=-205, y=-91.75, z=0.1, yaw=0)
         # self.car_b.spawn_vehicle(x=-215, y=-91.75, z=1, yaw=0)
         # self.car_c.spawn_vehicle(x=-215, y=-88.25, z=1, yaw=0)
-
 
     def set_waypoints(self):
         # Car A
@@ -62,17 +61,28 @@ class LaneMerge:
         # self.car_a.set_waypoints
 
     def run(self):
+        n_tick = 0
+        rst = False
+        self.car_a.velocityReference =8.9408
         while True:
-            MeshNode.call(self.car_a.portNumber, Request('tick', args=[[]], longRunning=True))
+            n_tick += 1
+            MeshNode.call(self.car_a.portNumber, Request('tick', args=[], longRunning=True))
             # MeshNode.call(self.car_b.portNumber, Request('tick', args=[[]], longRunning=True))
             # MeshNode.call(self.car_c.portNumber, Request('tick', args=[[]], longRunning=True))
-
             self.world.tick()
+            car_ref = [i for i in self.world.get_actors() if type(i) is carla.libcarla.Vehicle][0]
+            car_loc = car_ref.get_location()
+            # control = carla.VehicleControl(1, 0, 0, False, False, False, 0)
+            # car_ref.apply_control(control)
+            if not rst and self.car_a._getCarForwardVelocity() > 0.3:
+                rst = True
+                n_tick = 0
+            print(
+                f"t={n_tick / 100}s, car location: {car_loc}, car vel: {self.car_a._getCarForwardVelocity() * 2.23694}mph")
 
 
 def gen_waypoints_straight_x(location):
     pass
-
 
 
 if __name__ == '__main__':
