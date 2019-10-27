@@ -351,17 +351,32 @@ class Agent(MeshNode):
 
     def _frameUpdate(self):
         # vel = self._getCarForwardVelocity()
+        trns = self.carla_vehicle.get_transform().location
+        rotsV = self.carla_vehicle.get_transform().rotation.get_forward_vector()
+        self.vehiclePose.translation = Translation2d(trns.x, trns.y)
+        self.vehiclePose.rotation = Rotation2d(rotsV.x, rotsV.y)
         if self.drivingBehavior == AgentDrivingBehavior.FOLLOW_WAYPOINTS:
             dbg = self.carla_world.debug
             for i in self.waypointList:
                 loc = carla.Location(i.x, i.y, 0.5)
                 dbg.draw_point(
                     loc,
-                    0.5,
-                    carla.Color(0,255,0)
+                    0.1,
+                    carla.Color(0, 255, 0),
+                    0.02
                 )
+
+            pointPt = self.vehiclePose.translation + Translation2d(5,0).rotateByOrigin(self.vehiclePose.rotation)
+            loc = carla.Location(pointPt.x, pointPt.y, 0.5)
+            dbg.draw_point(
+                loc, 0.1, carla.Color(255,0,0), 0.01
+            )
+
             self.velocityReference = self.waypointFollowSpeed
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
+            loc = carla.Location(self.waypointList[0].x, self.waypointList[0].y, 0.51)
+            dbg.draw_point(loc, 0.2, carla.Color(0,0,255),0.01)
+
         elif self.drivingBehavior == AgentDrivingBehavior.MAINTAIN_DISTANCE:
             self.velocityReference = self._runFollowPDLoop()
             self.angularVelocityReference = self._purePursuitAngleToAngularVelocity()
@@ -438,7 +453,7 @@ class Agent(MeshNode):
         self.followAxis = axis
 
     def _setWaypoints(self, points: List[Translation2d]):
-        self.waypointList = points
+        self.waypointList = deepcopy(points)
 
     def _getPurePursuitAngleCommand(self):
         wp0 = self.waypointList[0]
