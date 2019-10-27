@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import List
 from random import random, shuffle
@@ -13,6 +14,10 @@ import zmq
 
 from apis.Messages import Request
 from controllers.drive_controller import DriveController
+from mathutil.Pose2d import Pose2d
+from mathutil.Translation2d import Translation2d
+from mathutil.Rotation2d import Rotation2d
+from mathutil.Types import carlaV3Dot
 from services.MeshNode import MeshNode, defaultPortRange
 
 
@@ -49,6 +54,12 @@ DIST_THRESHHOLD = 0.01666667
 DIST_THRESHHOLD = 10000
 MAX_GRAPH_DEPTH = 3
 
+VEL_P_GAIN_ACC = 0.1
+VEL_P_GAIN_BRK = 0.02
+
+DIST_P_GAIN = 5
+DIST_D_GAIN = 10
+
 
 class AgentDrivingMode(Enum):
     ASSHOLE = -1
@@ -60,6 +71,13 @@ class AgentDrivingMode(Enum):
     IDLE = 5
 
 
+class AgentDrivingBehavior(Enum):
+    FOLLOW_WAYPOINTS = 0
+    MAINTAIN_DISTANCE = 1
+    MERGING = 2
+    WAITING = 3
+
+
 class Agent(MeshNode):
     """
     Main agent microservice
@@ -69,32 +87,67 @@ class Agent(MeshNode):
     found_agents: List[AgentRepresentation] = []
     gpscoords: np.ndarray
     graph: nx.Graph
-    drivingMode: AgentDrivingMode
 
+    drivingMode: AgentDrivingMode
+    drivingBehavior: AgentDrivingBehavior
     driveController: DriveController
+    followTarget: AgentRepresentation
+    followDistance: float = 8.0  # 3 meter
+
+    PD_lastError: float = None
+
+    velocityReference: float = 0.0
+
+    waypointFollowSpeed: float = 50.0
+
+    followAxis: Rotation2d
 
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
                          port_range=port_range)  # Bind to port and start RPC/dispatch daemon
 
         self.gpscoords = np.asarray([0, 0])
-        self.dispatchTable['get_coords'] = self._getCoords
-        self.dispatchTable['set_coords'] = self._setCoords
+        self.vehiclePose = Pose2d()
+        self.dispatchTable['get_pose'] = self._getCoords
+        self.dispatchTable['set_pose'] = self._setCoords
         # self.dispatchTable['get_connected'] = self._getCoords
         self.dispatchTable['get_graph_recursive'] = self.getGraph_Recursive
         self.dispatchTable['num_connections'] = lambda: len(self.directly_connected)
-        self.dispatchTable['set_driving_mode'] = self._setDrivingMode
-        self.dispatchTable['get_driving_mode'] = lambda: self.drivingMode
         self.dispatchTable['route_intra_graph_call'] = self.routeGraphRequest
         self.dispatchTable['intra_graph_call'] = self.execGraphRequest
         self.dispatchTable['ssid_lookup'] = self.getRepForSSID
 
-        self.dispatchTable['negotiatePriority']
-        self.dispatchTable['tick']
+        self.dispatchTable['negotiatePriority'] = self.negotiatePriority
 
         self.dispatchTable['connect_carla'] = self.connect_carla
         self.dispatchTable['spawn_vehicle'] = self.spawn_vehicle
         self.dispatchTable['drive_vehicle'] = self.drive_vehicle
+
+        self.dispatchTable['tick'] = self._frameUpdate
+
+        # ASSHOLE, MERGE_REQ, MERGE_ACT, DRIVING_HIGHWAY, DRIVING_CITY, TURNING, IDLE
+        self.dispatchTable['set_driving_mode'] = self._setDrivingMode
+        self.dispatchTable['get_driving_mode'] = lambda: self.drivingMode
+
+        self.dispatchTable['set_follow_target'] = self._setFollowTarget
+        self.dispatchTable['get_follow_target'] = lambda: self.followTarget
+        self.dispatchTable['set_follow_distance'] = self._setFollowDistance
+        self.dispatchTable['get_follow_distance'] = lambda: self.followDistance
+
+        # FOLLOW_WAYPOINTS,
+        self.dispatchTable['set_driving_behavior'] = self._setDrivingBehavior
+        self.dispatchTable['get_driving_behavior'] = lambda: self.drivingBehavior
+
+        self.dispatchTable['set_waypoint_follow_speed'] = lambda: self.drivingBehavior
+        self.dispatchTable['get_waypoint_follow_speed'] = lambda: self.drivingBehavior
+
+        self.dispatchTable['set_waypoints'] = self._setWaypoints()
+
+        self.dispatchTable['get_throttle_brake'] = lambda: self.drivingBehavior
+        self.dispatchTable['get_wheel'] = lambda: self.drivingBehavior
+
+        self.dispatchTable['set_follow_axis'] = lambda: self.followAxis
+        self.dispatchTable['get_follow_axis'] = self._setFollowAxis
 
         self.graph = nx.Graph()
         self.graph.add_node(AgentRepresentation.fromAgent(self))  # Add this
@@ -102,17 +155,19 @@ class Agent(MeshNode):
         self.carla_client = None
         self.carla_world = None
         self.carla_vehicle = None
+
         self.drivingMode = AgentDrivingMode.IDLE
+        self.drivingBehavior = AgentDrivingBehavior.WAITING
         self.driveController = DriveController(2.5)
 
     def isAgentNode(self) -> bool:
         return True
 
     def _getCoords(self) -> np.ndarray:
-        return self.gpscoords
+        return self.pose
 
-    def _setCoords(self, newCoords: np.ndarray):
-        self.gpscoords = newCoords
+    def _setCoords(self, newCoords: Pose2d):
+        self.gpscoords = Pose2d
 
     def _getDistance(self, otherCoords: np.ndarray) -> float:
         return np.linalg.norm(self.gpscoords - otherCoords)
@@ -214,7 +269,8 @@ class Agent(MeshNode):
     def getGraph_Godmode(self):
         return
 
-    def _semiShuffle(self, l: List, probability: float = 0.3) -> List:
+    @staticmethod
+    def _semiShuffle(l: List, probability: float = 0.3) -> List:
         l2 = l.copy()
         for i in range(len(l2) - 1):
             if random() < probability:
@@ -230,9 +286,10 @@ class Agent(MeshNode):
         spawnpoint = carla.Tranform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
         self.carla_vehicle = self.carla_world.spawn_actor(blueprint, spawnpoint)
 
-    def drive_vehicle(self, x, y, z, yaw):
-        self.carla_vehicle.set_velocity(carla.Vector3D(x=x, y=y, z=z))
-        self.carla_vehicle.set_angular_velocity(carla.Vector3D(z=yaw))
+    def drive_vehicle(self, throttle: float, brake: float, wheel: float):
+        control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
+        self.carla_vehicle.apply_control(control)
+
     def _setDrivingMode(self, mode: AgentDrivingMode):
         self.drivingMode = mode
 
@@ -261,6 +318,69 @@ class Agent(MeshNode):
             self._determineYieldAction(ourMode, theirMode)
 
     def _determineYieldAction(self, ourMode: AgentDrivingMode, theirMode: AgentDrivingMode):
+        pass
+
+    def _frameUpdate(self):
+        vel = self._getCarForwardVelocity()
+        throttle, brake = self._getThrottleAndBrake(vel)
+        wheel = 0.0
+        self.drive_vehicle(throttle, brake, wheel)
+
+    def _setFollowTarget(self, target: AgentRepresentation):
+        self.followTarget = target
+
+    def _setFollowDistance(self, dist: float):
+        self.followDistance = dist
+
+    def _setDrivingBehavior(self, behavior: AgentDrivingBehavior):
+        self.drivingBehavior = behavior
+
+    def _setVelocityRef(self, vref: float):
+        self.velocityReference = vref
+
+    def _setWaypointSpeed(self, vref: float):
+        self.waypointFollowSpeed = vref
+
+    def _getThrottleAndBrake(self, vel=None):
+        if vel is None:
+            self._getCarForwardVelocity()
+        error = vel - self.velocityReference
+        if error > 0:  # actual speed > desired, need to brake
+            throttle = 0.0
+            brake = VEL_P_GAIN_BRK * math.fabs(error)
+        else:  # actual speed < desired, need to accelerate
+            throttle = VEL_P_GAIN_ACC * math.fabs(error)
+            brake = 0.0
+        return (throttle, brake)
+
+    def _getCarForwardVelocity(self):
+        vel: carla.Vector3D = self.carla_vehicle.get_velocity()
+        forwardVector: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
+        return carlaV3Dot(vel, forwardVector)
+
+    def _distanceToFollowTarget(self) -> Translation2d:
+        our_pose = self.vehiclePose
+        their_pose: Pose2d = self.dispatch(Request('intra_graph_call',
+                                                   args=[Request('get_coords'), self.followTarget])).response
+        pose_difference = their_pose.translation - our_pose.translation
+        diff_along_axis: float = pose_difference.position.dot(self.followAxis)
+        return diff_along_axis
+
+    def _runFollowPDLoop(self, distance=None):
+        if distance is None:
+            distance = self._distanceToFollowTarget()
+        currentError = distance - self.followDistance
+        if self.PD_lastError is None:
+            self.PD_lastError = currentError
+        dError = currentError - self.PD_lastError
+        pTerm = DIST_P_GAIN * currentError
+        dTerm = DIST_D_GAIN * dError
+        return pTerm + dTerm
+
+    def _setFollowAxis(self, axis: Rotation2d):
+        self.followAxis = axis
+
+    def _setWaypoints(self):
         pass
 
 
@@ -329,4 +449,4 @@ def test_pathing():
 if __name__ == "__main__":
     # test_findSSIDs()
     test_findNodes()
-    #test_pathing()
+    # test_pathing()
