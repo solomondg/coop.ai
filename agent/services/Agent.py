@@ -106,6 +106,8 @@ class Agent(MeshNode):
 
     reee: float = 0.0
 
+    waypointList: List[Translation2d]
+
     def __init__(self, ssid: str = None, name: str = None, port: int = None, port_range: tuple = None):
         super().__init__(ssid=ssid, name=name, port=port,
                          port_range=port_range)  # Bind to port and start RPC/dispatch daemon
@@ -163,6 +165,8 @@ class Agent(MeshNode):
         self.drivingMode = AgentDrivingMode.IDLE
         self.drivingBehavior = AgentDrivingBehavior.WAITING
         self.driveController = DriveController(2.5)
+
+        self.waypointList = []
 
     def isAgentNode(self) -> bool:
         return True
@@ -396,8 +400,8 @@ class Agent(MeshNode):
     def _setFollowAxis(self, axis: Rotation2d):
         self.followAxis = axis
 
-    def _setWaypoints(self):
-        pass
+    def _setWaypoints(self, points: List[Translation2d]):
+        self.waypointList = points
 
 
 def test_findSSIDs():
