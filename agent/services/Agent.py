@@ -90,8 +90,8 @@ class Agent(MeshNode):
     gpscoords: np.ndarray
     graph: nx.Graph
 
-    drivingMode: AgentDrivingMode
-    drivingBehavior: AgentDrivingBehavior
+    drivingMode: AgentDrivingMode = AgentDrivingMode.IDLE
+    drivingBehavior: AgentDrivingBehavior = AgentDrivingBehavior.WAITING
     driveController: DriveController
     followTarget: AgentRepresentation
     followDistance: float = 8.0  # 3 meter
