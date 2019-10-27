@@ -292,7 +292,7 @@ class Agent(MeshNode):
 
     def drive_vehicle(self, throttle: float, brake: float, wheel: float):
         control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
-        self.fuck_ice(self.velocityReference, 0.0)
+        self.fuck_ice(self.velocityReference, 180.0)
 
     def fuck_ice(self, forwardVel:float, angularVel:float):
         conv = 0.01
@@ -300,9 +300,9 @@ class Agent(MeshNode):
         dir: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         fwd = self._getCarForwardVelocity()
         err = forwardVel - fwd
-        addr = carla.Vector3D(x=vel.x+dir.x*err*conv, y=vel.y+dir.y*err*conv, z=vel.z+dir.z*err*conv)
+        addr = carla.Vector3D(x=dir.x*fwd+dir.x*err*conv, y=dir.y*fwd+dir.y*err*conv, z=vel.z+dir.z*err*conv)
         self.carla_vehicle.set_velocity(addr)
-        self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=10))
+        self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=angularVel))
 
     def _setDrivingMode(self, mode: AgentDrivingMode):
         self.drivingMode = mode
@@ -367,7 +367,6 @@ class Agent(MeshNode):
         else:  # actual speed < desired, need to accelerate
             throttle = VEL_P_GAIN_ACC * math.fabs(error) + self.reee*VEL_FORBIDDEN_GAIN
             brake = 0.0
-        print(error,self.reee, throttle,brake)
         return (throttle, brake)
 
     def _getCarForwardVelocity(self):

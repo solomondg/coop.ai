@@ -29,8 +29,8 @@ class LaneMerge:
 
     def place_spectator(self):
         spectator = [i for i in self.world.get_actors() if i.type_id == 'spectator'][0]
-        spectator.set_transform(carla.Transform(carla.Location(x=-220, y=-90, z=3),
-                                                carla.Rotation(pitch=-15, yaw=0, roll=0)))
+        spectator.set_transform(carla.Transform(carla.Location(x=-205, y=-90, z=15),
+                                                carla.Rotation(pitch=-90, yaw=0, roll=0)))
 
         self.spectators.append(spectator)
 
@@ -63,22 +63,24 @@ class LaneMerge:
     def run(self):
         n_tick = 0
         rst = False
-        self.car_a.velocityReference =8.9408
+        self.car_a.velocityReference =8.9408 * 2
         while True:
             n_tick += 1
+            self.world.tick()
             MeshNode.call(self.car_a.portNumber, Request('tick', args=[], longRunning=True))
             # MeshNode.call(self.car_b.portNumber, Request('tick', args=[[]], longRunning=True))
             # MeshNode.call(self.car_c.portNumber, Request('tick', args=[[]], longRunning=True))
-            self.world.tick()
             car_ref = [i for i in self.world.get_actors() if type(i) is carla.libcarla.Vehicle][0]
             car_loc = car_ref.get_location()
+            car_rot = car_ref.get_transform().rotation
             # control = carla.VehicleControl(1, 0, 0, False, False, False, 0)
             # car_ref.apply_control(control)
             if not rst and self.car_a._getCarForwardVelocity() > 0.3:
                 rst = True
                 n_tick = 0
-            print(
-                f"t={n_tick / 100}s, car location: {car_loc}, car vel: {self.car_a._getCarForwardVelocity() * 2.23694}mph")
+            # print(
+            #     f"t={n_tick / 100}s, car location: {car_loc}, car vel: {self.car_a._getCarForwardVelocity() * 2.23694}mph")
+            print(f"t={n_tick / 100}s, car heading: {car_rot}")
 
 
 def gen_waypoints_straight_x(location):
