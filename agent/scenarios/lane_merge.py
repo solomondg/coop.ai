@@ -2,6 +2,7 @@ import carla
 from services.Agent import Agent
 from services.MeshNode import MeshNode
 from apis.Messages import Request
+from mathutil.Translation2d import Translation2d
 
 
 class LaneMerge:
@@ -55,36 +56,46 @@ class LaneMerge:
         # self.car_b.spawn_vehicle(x=-215, y=-91.75, z=1, yaw=0)
         # self.car_c.spawn_vehicle(x=-215, y=-88.25, z=1, yaw=0)
 
-    def set_waypoints(self):
-        # Car A
-        car_a_location = self.car_a.get_location
-        # self.car_a.set_waypoints
-
     def run(self):
         n_tick = 0
-        rst = False
-        self.car_a.velocityReference =8.9408 * 2
+        # self.car_a.velocityReference =8.9408 * 2
+        start_y = self.car_a.carla_vehicle.get_location().y
+        lane_width = 4  # m
+        lane_change_dist = 10  # m
+        lane_change_x = None
         while True:
             n_tick += 1
             self.world.tick()
             MeshNode.call(self.car_a.portNumber, Request('tick', args=[], longRunning=True))
             # MeshNode.call(self.car_b.portNumber, Request('tick', args=[[]], longRunning=True))
             # MeshNode.call(self.car_c.portNumber, Request('tick', args=[[]], longRunning=True))
-            car_ref = [i for i in self.world.get_actors() if type(i) is carla.libcarla.Vehicle][0]
-            car_loc = car_ref.get_location()
-            car_rot = car_ref.get_transform().rotation
-            # control = carla.VehicleControl(1, 0, 0, False, False, False, 0)
-            # car_ref.apply_control(control)
-            if not rst and self.car_a._getCarForwardVelocity() > 0.3:
-                rst = True
-                n_tick = 0
-            # print(
-            #     f"t={n_tick / 100}s, car location: {car_loc}, car vel: {self.car_a._getCarForwardVelocity() * 2.23694}mph")
-            print(f"t={n_tick / 100}s, car heading: {car_rot}")
+            car_loc = self.car_a.carla_vehicle.get_location()
+
+            if n_tick < 100:
+                self.car_a._setWaypoints(gen_waypoints_straight_x(car_loc))
+            else:
+                if lane_change_x is None:
+                    lane_change_x = car_loc.x + lane_change_dist
+                self.car_a._setWaypoints(gen_lanechange_waypoints(car_loc, start_y, start_y+lane_width, lane_change_x))
+
+            # self.car_b._setWaypoints(gen_waypoints_stright_x(self.car_b_loc))
 
 
-def gen_waypoints_straight_x(location):
-    pass
+def gen_waypoints_straight_x(location, dist=1, num_points=25):
+    waypoints = []
+    last_x = location.x
+    for i in range(num_points):
+        waypoints.append(Translation2d(last_x + dist, location.y))
+    return waypoints
+
+def gen_lanechange_waypoints(location, original_y, final_y, change_x, dist=1, num_points=25):
+    waypoints = []
+    last_x = location.x
+    for i in range(num_points):
+        next_x = last_x + dist
+        y = original_y if next_x < change_x else final_y
+        waypoints.append(Translation2d(next_x, y))
+    return waypoints
 
 
 if __name__ == '__main__':
