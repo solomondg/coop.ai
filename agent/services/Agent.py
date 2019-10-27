@@ -316,7 +316,7 @@ class Agent(MeshNode):
         dir: carla.Vector3D = self.carla_vehicle.get_transform().rotation.get_forward_vector()
         fwd = self._getCarForwardVelocity()
         err = forwardVel - fwd
-        addr = carla.Vector3D(x=dir.x * fwd + dir.x * err * conv, y=dir.y * fwd + dir.y * err * conv,
+        addr = carla.Vector3D(x=max(dir.x * fwd + dir.x * err * conv, 0), y=dir.y * fwd + dir.y * err * conv,
                               z=vel.z + dir.z * err * conv)
         self.carla_vehicle.set_velocity(addr)
         self.carla_vehicle.set_angular_velocity(carla.Vector3D(x=0, y=0, z=angularVel))
