@@ -1,5 +1,5 @@
 import carla
-from services.Agent import Agent
+from services.Agent import Agent, AgentDrivingBehavior
 from services.MeshNode import MeshNode
 from apis.Messages import Request
 from mathutil.Translation2d import Translation2d
@@ -71,21 +71,27 @@ class LaneMerge:
             # MeshNode.call(self.car_c.portNumber, Request('tick', args=[[]], longRunning=True))
             car_loc = self.car_a.carla_vehicle.get_location()
 
-            if n_tick < 100:
-                self.car_a._setWaypoints(gen_waypoints_straight_x(car_loc))
+            if n_tick == 100:
+                self.car_a._setDrivingBehavior(AgentDrivingBehavior.FOLLOW_WAYPOINTS)
+                print("Set to following waypoints mode")
+            if n_tick < 500:
+                self.car_a._setWaypoints(gen_waypoints_straight_x(car_loc, start_y))
             else:
                 if lane_change_x is None:
+                    print(f"Lane change in {lane_change_dist} m")
                     lane_change_x = car_loc.x + lane_change_dist
                 self.car_a._setWaypoints(gen_lanechange_waypoints(car_loc, start_y, start_y+lane_width, lane_change_x))
+
+            print(f"n_tick: {n_tick}\tangular_vel: {self.car_a.angularVelocityReference}")
 
             # self.car_b._setWaypoints(gen_waypoints_stright_x(self.car_b_loc))
 
 
-def gen_waypoints_straight_x(location, dist=1, num_points=25):
+def gen_waypoints_straight_x(location, original_y, init_dist=15, dist=1, num_points=25):
     waypoints = []
-    last_x = location.x
+    last_x = location.x + init_dist
     for i in range(num_points):
-        waypoints.append(Translation2d(last_x + dist, location.y))
+        waypoints.append(Translation2d(last_x + dist, original_y))
     return waypoints
 
 def gen_lanechange_waypoints(location, original_y, final_y, change_x, dist=1, num_points=25):

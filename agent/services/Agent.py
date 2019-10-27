@@ -151,7 +151,7 @@ class Agent(MeshNode):
         self.dispatchTable['set_waypoint_follow_speed'] = lambda: self.drivingBehavior
         self.dispatchTable['get_waypoint_follow_speed'] = lambda: self.drivingBehavior
 
-        self.dispatchTable['set_waypoints'] = self._setWaypoints()
+        self.dispatchTable['set_waypoints'] = self._setWaypoints
 
         self.dispatchTable['get_throttle_brake'] = lambda: self.drivingBehavior
         self.dispatchTable['get_wheel'] = lambda: self.drivingBehavior
