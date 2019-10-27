@@ -168,6 +168,9 @@ class Agent(MeshNode):
 
         self.waypointList = []
 
+        self.velocityReference = 0
+        self.angularVelocityReference = 0
+
     def isAgentNode(self) -> bool:
         return True
 
@@ -294,9 +297,9 @@ class Agent(MeshNode):
         spawnpoint = carla.Transform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
         self.carla_vehicle = self.carla_world.spawn_actor(blueprint, spawnpoint)
 
-    def drive_vehicle(self, throttle: float, brake: float, wheel: float):
-        control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
-        self.fuck_ice(self.velocityReference, 180.0)
+    def drive_vehicle(self):
+        # control = carla.VehicleControl(throttle, brake, wheel, False, False, False, 0)
+        self.fuck_ice(self.velocityReference, self.angularVelocityReference)
 
     def fuck_ice(self, forwardVel:float, angularVel:float):
         conv = 0.01
@@ -356,6 +359,9 @@ class Agent(MeshNode):
 
     def _setVelocityRef(self, vref: float):
         self.velocityReference = vref
+
+    def _setAngularVelocityRef(self, aref: float):
+        self.angularVelocityReference = aref
 
     def _setWaypointSpeed(self, vref: float):
         self.waypointFollowSpeed = vref
