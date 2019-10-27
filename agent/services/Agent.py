@@ -170,7 +170,7 @@ class Agent(MeshNode):
         self.gpscoords = Pose2d
 
     def _getDistance(self, otherCoords: np.ndarray) -> float:
-        return np.linalg.norm(self.gpscoords - otherCoords)
+        return np.linalg.norm((self.vehiclePose.translation - otherCoords.translation).position.asNDArray())
 
     def findAgents(self):
         """
